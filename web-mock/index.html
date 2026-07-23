@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cascade Sevens — Rules Mock</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Cascade Sevens <span class="subtitle">rules/functionality mock</span></h1>
+    <div class="topbar-controls">
+      <label>Mode:
+        <select id="modeSelect">
+          <option value="standard">Standard (&gt;1000)</option>
+          <option value="quick">Quick (&gt;300)</option>
+        </select>
+      </label>
+      <button id="newGameBtn">New Game</button>
+    </div>
+  </header>
+
+  <div class="scoreboard">
+    <div class="score-box you">You (P1) <span id="scoreP1">0</span></div>
+    <div class="round-info">Round <span id="roundNum">0</span> · Pile: <span id="pileCount">0</span></div>
+    <div class="score-box ai">AI (P2) <span id="scoreP2">0</span></div>
+  </div>
+
+  <main id="banner" class="banner" hidden></main>
+
+  <section class="table">
+    <h2>Open Row <span class="hint">(click a card to scoop it + everything on top, once you've come out)</span></h2>
+    <div id="openRow" class="open-row"></div>
+
+    <h2>Tableau <span class="hint">(shared — click a meld to target it for Add/Swap)</span></h2>
+    <div id="tableau" class="tableau"></div>
+  </section>
+
+  <section class="hand-area">
+    <div class="hand-header">
+      <span id="turnLabel">—</span>
+      <span id="obligationLabel" class="obligation" hidden></span>
+    </div>
+    <div id="hand" class="hand"></div>
+    <div class="controls">
+      <button id="drawPileBtn">Draw closed pile</button>
+      <button id="layMeldBtn">Lay new meld from selected</button>
+      <button id="addToMeldBtn">Add selected card to targeted meld</button>
+      <button id="swapJokerBtn">Swap targeted joker for selected card</button>
+      <button id="discardBtn">Discard selected</button>
+    </div>
+  </section>
+
+  <section class="log-panel">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </section>
+
+  <div id="modalRoot" class="modal-root" hidden></div>
+
+  <script src="engine.js"></script>
+  <script src="ai.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
