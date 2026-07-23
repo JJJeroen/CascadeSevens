@@ -1,13 +1,13 @@
 :root {
-  --bg: #0f3d2e;
-  --bg-panel: #123a2c;
+  --bg: #16543f;
+  --bg-panel: #1b6249;
   --card-bg: #fdfdfb;
   --card-border: #1a1a1a;
-  --red: #b3261e;
+  --red: #c0392b;
   --black: #1a1a1a;
-  --accent: #d4af37;
-  --text: #f3f1ea;
-  --muted: #b9c9c0;
+  --accent: #e8c14c;
+  --text: #f7f5ed;
+  --muted: #d3e3d9;
 }
 
 * { box-sizing: border-box; }
@@ -57,6 +57,8 @@ select {
 .scoreboard {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
   padding: 0.5rem 1.25rem;
   font-size: 0.95rem;
   color: var(--muted);
@@ -108,7 +110,7 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   background: rgba(255,255,255,0.03);
 }
 .meld.targeted { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-.meld .meld-cards { display: flex; }
+.meld .meld-cards { display: flex; gap: 0.35rem; }
 
 .card {
   width: 52px;
@@ -123,27 +125,29 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   font-weight: 700;
   font-size: 1rem;
   color: var(--black);
-  margin-left: -30px;
   flex-shrink: 0;
   box-shadow: 1px 1px 3px rgba(0,0,0,0.4);
   user-select: none;
 }
-.card:first-child { margin-left: 0; }
 .card.red { color: var(--red); }
 .card.joker { background: #e9dfc4; }
 .card.owner-1 { outline: 2px solid #6fbf73; outline-offset: -2px; }
 .card.owner-2 { outline: 2px solid #6f9fbf; outline-offset: -2px; }
 
-.open-row .card { cursor: default; }
+/* Only the open row gets the overlapping "cascade" look — it's a visual
+   metaphor for that specific mechanic, not a general card style. */
+.open-row .card { margin-left: -30px; cursor: default; }
+.open-row .card:first-child { margin-left: 0; }
 .open-row .card.pickable { cursor: pointer; }
-.open-row .card.pickable:hover { transform: translateY(-6px); }
+.open-row .card.pickable:hover { transform: translateY(-6px); z-index: 1; position: relative; }
 
 .hand-area { }
-.hand-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.hand-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem; }
 .obligation { color: #ffb74d; font-size: 0.85rem; font-weight: 600; }
 
 .hand {
   display: flex;
+  gap: 0.5rem;
   min-height: 90px;
   padding: 0.5rem 0 1rem;
   overflow-x: auto;
@@ -182,3 +186,12 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
 }
 .modal-box h3 { margin-top: 0; }
 .modal-box .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+
+@media (max-width: 480px) {
+  .table, .hand-area, .log-panel { margin: 0.6rem 0.6rem; padding: 0.6rem 0.6rem 1rem; }
+  .topbar { padding: 0.6rem 0.75rem; }
+  .scoreboard { flex-direction: column; align-items: center; text-align: center; padding: 0.5rem 0.75rem; font-size: 0.85rem; }
+  .banner { margin: 0.5rem 0.6rem; }
+  .controls { gap: 0.4rem; }
+  .controls button { flex: 1 1 auto; font-size: 0.85rem; }
+}
