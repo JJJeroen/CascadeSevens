@@ -29,7 +29,7 @@
   <main id="banner" class="banner" hidden></main>
 
   <section class="table">
-    <h2>Open Row <span class="hint">(click a card to scoop it + everything on top — the bottom one must be melded this turn)</span></h2>
+    <h2>Open Row <span class="hint">(click a card to scoop it + everything on top — the bottom one must be melded this turn; repeatable in Part 1, but locks out the closed pile for this turn)</span></h2>
     <div id="openRow" class="open-row"></div>
 
     <h2>Tableau <span class="hint">(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)</span></h2>
@@ -40,11 +40,14 @@
     <div class="hand-header">
       <span id="turnLabel">—</span>
       <span id="obligationLabel" class="obligation" hidden></span>
+      <span id="selectionCount" class="selection-count" hidden></span>
     </div>
     <div id="hand" class="hand"></div>
     <div class="controls">
       <button id="drawPileBtn">Draw closed pile</button>
+      <button id="finishDrawingBtn">Done drawing → Part 2</button>
       <button id="undoDrawBtn">Undo pickup</button>
+      <button id="clearSelectionBtn">Clear selection</button>
       <button id="layMeldBtn">Lay new meld from selected</button>
       <button id="addToMeldBtn">Add selected card to targeted meld</button>
       <button id="swapJokerBtn">Swap targeted joker for selected card</button>

@@ -230,8 +230,17 @@ const CascadeAI = (() => {
 
     if (r.part === 1) {
       const draw = pickDraw(game);
-      if (draw.source === 'row') E_.drawFromOpenRow(game, draw.cardId);
-      else E_.drawFromClosedPile(game);
+      if (draw.source === 'row') {
+        // The AI keeps it simple and never repeats a row-take (§2.3 allows
+        // it, but one draw is enough for this heuristic) — it must now
+        // explicitly finish drawing, since a row-take no longer auto-
+        // advances to Part 2 on its own.
+        E_.drawFromOpenRow(game, draw.cardId);
+        if (r.ended) { callbacks.onStateChanged(); return; }
+        E_.finishDrawing(game);
+      } else {
+        E_.drawFromClosedPile(game);
+      }
       if (r.ended) { callbacks.onStateChanged(); return; }
       callbacks.onStateChanged();
     }

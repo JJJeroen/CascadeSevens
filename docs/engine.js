@@ -62,7 +62,8 @@ const CascadeEngine = (() => {
       part: 'turn0', // 'turn0' | 1 | 2 | 3
       turn0: { stage: 'p1first', resolved: false }, // stage: p1first -> p2second -> p1followup -> resolved
       pendingObligations: [], // card ids that must appear in a meld action before Part 3
-      lastDraw: null, // { source: 'row', takenCards, obligationCardId } — undoable until any other Part 2 action happens
+      lastDraw: null, // { source: 'row', takenCards, priorObligations } — undoable until any other Part 2 action happens
+      rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
       comeOutAccum: 0, // running total of NEW meld value laid this turn pre-come-out
       comeOutMetThisTurn: false,
       log: [],
@@ -157,15 +158,34 @@ const CascadeEngine = (() => {
   }
 
   // --- Part 1: draw ---------------------------------------------------------
+  // Revised 2026-07-26: taking from the open row may be repeated any number
+  // of times within Part 1 — it no longer ends Part 1 by itself. The first
+  // row-take (in a Part 1 that hasn't drawn yet) forecloses the closed pile
+  // for the rest of this turn; only the bottom card of the MOST RECENT
+  // row-take is a binding "must meld" obligation — an earlier row-take's
+  // obligation is superseded, not accumulated, once another row-take
+  // happens. The player explicitly ends Part 1 via finishDrawing() once
+  // they're done (only reachable after at least one draw).
 
   function canDrawFromRow(game) {
     const r = game.round;
-    return r.openRow.length > 0;
+    return r.part === 1 && r.openRow.length > 0;
+  }
+
+  function canDrawFromClosedPile(game) {
+    const r = game.round;
+    return r.part === 1 && r.rowDrawsThisPart1 === 0;
   }
 
   function drawFromClosedPile(game) {
     const r = game.round;
-    if (r.part !== 1) throw new Error('Not in Part 1.');
+    if (!canDrawFromClosedPile(game)) {
+      throw new Error(
+        r.part !== 1
+          ? 'Not in Part 1.'
+          : 'Already took from the open row this turn — the closed pile is no longer available.'
+      );
+    }
     if (r.closedPile.length === 0) {
       endRoundPileEmpty(game);
       return;
@@ -180,36 +200,53 @@ const CascadeEngine = (() => {
 
   function drawFromOpenRow(game, cardId) {
     const r = game.round;
-    if (r.part !== 1) throw new Error('Not in Part 1.');
+    if (!canDrawFromRow(game)) throw new Error('Not in Part 1, or the open row is empty.');
     const idx = r.openRow.findIndex((c) => c.id === cardId);
     if (idx === -1) throw new Error('Card not in open row.');
     const taken = r.openRow.splice(idx); // this card + everything after it
     r.hands[r.current].push(...taken);
     const bottomCard = taken[0];
-    r.pendingObligations.push(bottomCard.id);
+    const priorObligations = r.pendingObligations.slice();
+    r.pendingObligations = [bottomCard.id]; // supersedes any earlier row-take's obligation this Part 1
+    r.rowDrawsThisPart1 += 1;
     logMsg(
       game,
       `Player ${r.current + 1} took ${taken.length} card(s) from the open row (must meld ${bottomCard.rank}${bottomCard.suit || ''}).`
     );
+    r.lastDraw = { source: 'row', takenCards: taken.slice(), priorObligations };
+  }
+
+  // The deliberate step from Part 1 into Part 2, once the player is done
+  // drawing (possible only after at least one open-row take — a closed-pile
+  // draw already transitions straight to Part 2 on its own).
+  function canFinishDrawing(game) {
+    const r = game.round;
+    return r.part === 1 && r.rowDrawsThisPart1 > 0;
+  }
+
+  function finishDrawing(game) {
+    const r = game.round;
+    if (!canFinishDrawing(game)) throw new Error('Nothing to finish — draw first.');
     r.part = 2;
     r.comeOutAccum = 0;
-    r.lastDraw = { source: 'row', takenCards: taken.slice(), obligationCardId: bottomCard.id };
+    r.lastDraw = null;
   }
 
   // Taking from the open row is voluntary in principle (§2.5) — a player
   // shouldn't take a card they can't meld — but nothing stops a human from
   // doing it anyway and then discovering they're stuck. This is the escape
-  // hatch: undo the pickup, provided nothing else has happened yet this
-  // turn (any other Part 2 action clears lastDraw, closing the window).
+  // hatch: undo the most recent row-take, provided nothing else has
+  // happened since (another row-take, any Part 2 action, or finishDrawing
+  // all close the window by clearing lastDraw).
   function canUndoDraw(game) {
     const r = game.round;
-    return r.part === 2 && !!r.lastDraw && r.lastDraw.source === 'row';
+    return !!r.lastDraw && r.lastDraw.source === 'row';
   }
 
   function undoDraw(game) {
     const r = game.round;
     if (!canUndoDraw(game)) throw new Error('Nothing to undo.');
-    const { takenCards, obligationCardId } = r.lastDraw;
+    const { takenCards, priorObligations } = r.lastDraw;
     const hand = r.hands[r.current];
     for (const c of takenCards) {
       if (findCard(hand, c.id) === -1) throw new Error('Cannot undo — hand has changed since the draw.');
@@ -218,8 +255,8 @@ const CascadeEngine = (() => {
       hand.splice(findCard(hand, c.id), 1);
     }
     r.openRow.push(...takenCards);
-    r.pendingObligations = r.pendingObligations.filter((id) => id !== obligationCardId);
-    r.part = 1;
+    r.pendingObligations = priorObligations;
+    r.rowDrawsThisPart1 -= 1;
     r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} undid taking from the open row.`);
   }
@@ -235,6 +272,80 @@ const CascadeEngine = (() => {
   function orderedRankValue(rank, aceHigh) {
     const map = { A: aceHigh ? 14 : 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, J: 11, Q: 12, K: 13 };
     return map[rank];
+  }
+
+  function rankNameForValue(value, aceHigh) {
+    if (value === (aceHigh ? 14 : 1)) return 'A';
+    const names = { 2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: 'J', 12: 'Q', 13: 'K' };
+    return names[value] || null;
+  }
+
+  // Given a fixed set of selected hand cards (by id), figure out on its own
+  // whether ANY valid meld can be formed — including every way a joker
+  // could stand in — rather than making the caller pre-guess a specific
+  // rank/suit assignment. Sets have no real ambiguity (a joker in a set
+  // always just takes the group's shared rank); runs do, since a joker can
+  // fill any internal gap or extend either end — solved directly rather
+  // than brute-forcing every permutation.
+  function autoResolveMeld(hand, cardIds) {
+    if (cardIds.length < 3) return { ok: false, error: 'A meld needs at least 3 cards.' };
+    const cards = cardIds.map((id) => hand.find((h) => h.id === id));
+    if (cards.some((c) => !c)) return { ok: false, error: 'Selected card not in hand.' };
+    const jokers = cards.filter((c) => c.rank === 'JOKER');
+    const reals = cards.filter((c) => c.rank !== 'JOKER');
+    if (reals.length === 0) return { ok: false, error: 'A meld needs at least one real (non-joker) card.' };
+
+    // Try as a set: every real card must already share one rank.
+    if (reals.every((c) => c.rank === reals[0].rank)) {
+      const rank = reals[0].rank;
+      const slots = [
+        ...reals.map((c) => ({ cardId: c.id })),
+        ...jokers.map((c) => ({ cardId: c.id, wildAs: { rank } })),
+      ];
+      return { ok: true, type: 'set', slots };
+    }
+
+    // Try as a run: every real card must share one suit.
+    if (reals.every((c) => c.suit === reals[0].suit)) {
+      const suit = reals[0].suit;
+      for (const aceHigh of [false, true]) {
+        const values = reals.map((c) => orderedRankValue(c.rank, aceHigh));
+        if (new Set(values).size !== values.length) continue; // can't happen with a real deck, but be safe
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const spanReals = max - min + 1;
+        const internalGaps = spanReals - reals.length;
+        const totalSize = reals.length + jokers.length;
+        if (internalGaps > jokers.length || totalSize > 13) continue;
+
+        // Fill internal gaps first, then extend outward with whatever's left.
+        const filled = new Set(values);
+        let spare = jokers.length - internalGaps;
+        for (let v = min; v <= max; v++) filled.add(v);
+        let lo = min, hi = max;
+        while (spare > 0) {
+          if (lo > 1) { lo -= 1; filled.add(lo); spare -= 1; }
+          else if (hi < 13) { hi += 1; filled.add(hi); spare -= 1; }
+          else break;
+        }
+        if (spare > 0) continue; // ran out of room (shouldn't happen given the totalSize<=13 check)
+
+        const jokerValues = [...filled].filter((v) => !values.includes(v)).sort((a, b) => a - b);
+        // tryAsRun's sequence check is order-dependent (array order = the
+        // run's left-to-right sequence) — reals-then-jokers concatenation
+        // order is essentially never already sorted, so this must be
+        // explicitly ordered by resolved value before returning.
+        const unordered = [
+          ...reals.map((c) => ({ cardId: c.id, value: orderedRankValue(c.rank, aceHigh) })),
+          ...jokers.map((c, i) => ({ cardId: c.id, wildAs: { rank: rankNameForValue(jokerValues[i], aceHigh) }, value: jokerValues[i] })),
+        ];
+        unordered.sort((a, b) => a.value - b.value);
+        const slots = unordered.map(({ cardId, wildAs }) => (wildAs ? { cardId, wildAs } : { cardId }));
+        return { ok: true, type: 'run', slots };
+      }
+    }
+
+    return { ok: false, error: 'No valid set or run is possible with the selected cards.' };
   }
 
   // slots: [{cardId, wildAs?: {rank, suit?}}] pulled from hand, in the order
@@ -431,6 +542,24 @@ const CascadeEngine = (() => {
     return { min: sorted[0], max: sorted[sorted.length - 1], aceHigh: false };
   }
 
+  // For a single card (possibly a joker) being added to an existing meld:
+  // no ambiguity for a set (always the meld's rank); for a run, try
+  // extending low then high. Returns null if a joker has no legal spot.
+  function autoResolveAddToMeld(meld, card) {
+    if (card.rank !== 'JOKER') return { wildAs: undefined };
+    if (meld.type === 'set') {
+      const rank = meld.slots.find((s) => s.card.rank !== 'JOKER').card.rank;
+      return { wildAs: { rank } };
+    }
+    const seq = meldRunValues(meld);
+    for (const v of [seq.min - 1, seq.max + 1]) {
+      if (v < 1 || v > 13) continue;
+      const rank = rankNameForValue(v, seq.aceHigh);
+      if (rank) return { wildAs: { rank } };
+    }
+    return null;
+  }
+
   function swapJoker(game, meldId, jokerCardId, replacementCardId) {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
@@ -535,6 +664,7 @@ const CascadeEngine = (() => {
     r.part = 1;
     r.comeOutAccum = 0;
     r.lastDraw = null;
+    r.rowDrawsThisPart1 = 0;
   }
 
   // --- Round / game end ---------------------------------------------------
@@ -624,11 +754,15 @@ const CascadeEngine = (() => {
     turn0Decline,
     turn0Accept,
     canDrawFromRow,
+    canDrawFromClosedPile,
     drawFromClosedPile,
     drawFromOpenRow,
+    canFinishDrawing,
+    finishDrawing,
     canUndoDraw,
     undoDraw,
     validateNewMeldSelection,
+    autoResolveMeld,
     hasComeOut,
     layNewMeld,
     addToMeld,
@@ -639,6 +773,7 @@ const CascadeEngine = (() => {
     orderedRankValue,
     meldRunValues,
     meldSuit,
+    autoResolveAddToMeld,
     roundMeldPointsSoFar,
     liveScore,
   };

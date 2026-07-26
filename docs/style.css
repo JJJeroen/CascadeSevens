@@ -147,6 +147,7 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
 .hand-area { }
 .hand-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem; }
 .obligation { color: #ffb74d; font-size: 0.85rem; font-weight: 600; }
+.selection-count { color: var(--muted); font-size: 0.85rem; }
 
 .hand {
   display: flex;

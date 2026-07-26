@@ -1,7 +1,6 @@
 // Cascade Sevens — UI controller. Hotseat human (P1) vs simple AI (P2).
 // Wires DOM events to CascadeEngine calls; no rules logic lives here.
 
-const RANKS_UI = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const SUIT_SYMBOL = { S: '♠', H: '♥', D: '♦', C: '♣' };
 
 let game = null;
@@ -36,16 +35,6 @@ function buildCardEl(card, opts = {}) {
   el.textContent = label;
   if (opts.onClick) el.addEventListener('click', opts.onClick);
   return el;
-}
-
-function promptRank(question) {
-  while (true) {
-    const v = window.prompt(`${question}\n(A, 2-10, J, Q, K — Cancel to abort)`);
-    if (v === null) return null;
-    const val = v.trim().toUpperCase();
-    if (RANKS_UI.includes(val)) return val;
-    alert('Not a valid rank, try again.');
-  }
 }
 
 // --- Game lifecycle -------------------------------------------------------
@@ -226,6 +215,29 @@ function renderTableau() {
       if (canRearrange) {
         cardEl.addEventListener('click', (ev) => {
           ev.stopPropagation(); // don't also toggle meld targeting
+          // Clicking a joker with a matching hand card already selected is
+          // clearly a swap-in-place attempt, not a rearrangement — do that
+          // instead of a pull (which would just reject it for a joker
+          // filling a run's internal gap, since removing it alone breaks
+          // the run; a swap replaces it atomically instead).
+          if (slot.card.rank === 'JOKER' && selectedHandCardIds.size === 1) {
+            const replacement = game.round.hands[0].find((c) => c.id === [...selectedHandCardIds][0]);
+            const matches =
+              replacement &&
+              slot.wildAs &&
+              replacement.rank === slot.wildAs.rank &&
+              (meld.type === 'set' || replacement.suit === CascadeEngine.meldSuit(meld));
+            if (matches) {
+              try {
+                CascadeEngine.swapJoker(game, meld.id, slot.card.id, replacement.id);
+                selectedHandCardIds.clear();
+                afterHumanAction();
+              } catch (e) {
+                showError(e.message);
+              }
+              return;
+            }
+          }
           try {
             CascadeEngine.pullFromMeld(game, meld.id, [slot.card.id]);
             afterHumanAction();
@@ -300,8 +312,18 @@ function renderControls() {
     obligEl.hidden = true;
   }
 
-  $('drawPileBtn').disabled = !(isHumanTurn && r.part === 1);
+  const selCountEl = $('selectionCount');
+  if (isHumanTurn && r.part === 2 && selected.length > 0) {
+    selCountEl.hidden = false;
+    selCountEl.textContent = `Selected: ${selected.map(cardText).join(', ')}`;
+  } else {
+    selCountEl.hidden = true;
+  }
+
+  $('drawPileBtn').disabled = !(isHumanTurn && CascadeEngine.canDrawFromClosedPile(game));
+  $('finishDrawingBtn').disabled = !(isHumanTurn && CascadeEngine.canFinishDrawing(game));
   $('undoDrawBtn').disabled = !(isHumanTurn && CascadeEngine.canUndoDraw(game));
+  $('clearSelectionBtn').disabled = !(isHumanTurn && selected.length > 0);
   $('layMeldBtn').disabled = !(isHumanTurn && r.part === 2 && selected.length >= 3);
   $('addToMeldBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedMeldId);
   const targetedMeld = r.tableau.find((m) => m.id === targetedMeldId);
@@ -344,24 +366,30 @@ $('undoDrawBtn').addEventListener('click', () => {
   }
 });
 
+$('finishDrawingBtn').addEventListener('click', () => {
+  try {
+    CascadeEngine.finishDrawing(game);
+    afterHumanAction();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
+$('clearSelectionBtn').addEventListener('click', () => {
+  selectedHandCardIds.clear();
+  render();
+});
+
 $('layMeldBtn').addEventListener('click', () => {
   const hand = game.round.hands[0];
   const ids = [...selectedHandCardIds];
-  const selectedCards = ids.map((id) => hand.find((c) => c.id === id));
-  const nonJoker = selectedCards.find((c) => c.rank !== 'JOKER');
-  if (!nonJoker) return showError('Need at least one non-joker card in the meld.');
-  const jokerCards = selectedCards.filter((c) => c.rank === 'JOKER');
-  const wildAsMap = {};
-  for (const j of jokerCards) {
-    // Only rank matters — suit (if the meld turns out to be a run) is
-    // always implied by the meld's real cards, never a separate choice.
-    const rank = promptRank(`Joker stands in for which rank?`);
-    if (!rank) return;
-    wildAsMap[j.id] = { rank };
-  }
-  const selections = ids.map((id) => (wildAsMap[id] ? { cardId: id, wildAs: wildAsMap[id] } : { cardId: id }));
+  // Figure out on its own whether ANY valid set or run exists for this
+  // selection, including every way a joker could stand in — no more
+  // asking the player to pre-guess a specific rank.
+  const resolved = CascadeEngine.autoResolveMeld(hand, ids);
+  if (!resolved.ok) return showError(resolved.error);
   try {
-    CascadeEngine.layNewMeld(game, selections);
+    CascadeEngine.layNewMeld(game, resolved.slots);
     selectedHandCardIds.clear();
     targetedMeldId = null;
     afterHumanAction();
@@ -375,16 +403,10 @@ $('addToMeldBtn').addEventListener('click', () => {
   const cardId = [...selectedHandCardIds][0];
   const card = hand.find((c) => c.id === cardId);
   const meld = game.round.tableau.find((m) => m.id === targetedMeldId);
-  let wildAs;
-  if (card.rank === 'JOKER') {
-    // Only rank matters — a run's suit is always implied by its real
-    // cards, never something the caller needs to supply.
-    const rank = promptRank(`Joker stands in for which rank in this ${meld.type}?`);
-    if (!rank) return;
-    wildAs = { rank };
-  }
+  const resolved = CascadeEngine.autoResolveAddToMeld(meld, card);
+  if (!resolved) return showError('No legal spot for that joker in this meld.');
   try {
-    CascadeEngine.addToMeld(game, targetedMeldId, cardId, wildAs);
+    CascadeEngine.addToMeld(game, targetedMeldId, cardId, resolved.wildAs);
     selectedHandCardIds.clear();
     afterHumanAction();
   } catch (e) {

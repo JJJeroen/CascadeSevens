@@ -65,6 +65,41 @@ sets, suit is meaningless; for runs, a joker's suit is always implied by the
 run's real cards, never something that needs to be separately tracked or
 displayed. Jokers now only ever carry a rank.
 
+**Second playtest round, same day (2026-07-26)** — four more fixes from
+actual play:
+- **Open-row takes now repeat within Part 1** (DESIGN.md §2.3/§3 decision 9):
+  taking from the row no longer ends Part 1 by itself. It can be repeated any
+  number of times, but locks out the closed pile for the rest of that turn
+  once used, and only the most recent take's bottom card is the binding "must
+  meld" obligation — an earlier one is superseded, not stacked. A new "Done
+  drawing → Part 2" button ends Part 1 explicitly.
+- **No more joker prompts when laying a new meld**: `autoResolveMeld()` works
+  out on its own whether any valid set or run exists for the selected cards
+  — including every way a joker could fill a gap or extend a run — instead
+  of making the player pre-guess a specific rank. Same for adding a joker to
+  an existing meld (`autoResolveAddToMeld()`), which tries both legal run
+  extensions automatically.
+- **Joker click now swaps when it should, instead of always pulling**:
+  clicking a joker sitting in a meld used to always attempt a rearrangement
+  pull, which correctly (but confusingly) fails for a joker filling a run's
+  internal gap, since removing it alone breaks the run. If a matching hand
+  card is already selected, clicking the joker now performs the atomic
+  swap-in-place action instead.
+- **Selection state made visible**: a "Selected: …" indicator plus a "Clear
+  selection" button, after a report of an action button staying disabled
+  when it looked like it should be enabled — the likely cause was a stale
+  multi-card selection left over from an earlier attempt, silently still
+  counted.
+
+**Known interaction risk, not a bug (found via testing, 2026-07-26)**: open-
+row cards visually overlap by design (the cascade effect), so a later card
+can sit on top of most of an earlier one. Clicking near the exact geometric
+center of a heavily-covered card can land on its neighbor instead of the
+card itself. This is the exact risk DESIGN.md §7 phase 0 flagged before any
+code was written ("tapping a specific buried card... is a real interaction-
+design risk") — worth a dedicated look before the native UI, not something
+fixed here.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker
