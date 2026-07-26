@@ -62,6 +62,7 @@ const CascadeEngine = (() => {
       part: 'turn0', // 'turn0' | 1 | 2 | 3
       turn0: { stage: 'p1first', resolved: false }, // stage: p1first -> p2second -> p1followup -> resolved
       pendingObligations: [], // card ids that must appear in a meld action before Part 3
+      lastDraw: null, // { source: 'row', takenCards, obligationCardId } — undoable until any other Part 2 action happens
       comeOutAccum: 0, // running total of NEW meld value laid this turn pre-come-out
       comeOutMetThisTurn: false,
       log: [],
@@ -174,6 +175,7 @@ const CascadeEngine = (() => {
     logMsg(game, `Player ${r.current + 1} drew from the closed pile.`);
     r.part = 2;
     r.comeOutAccum = 0;
+    r.lastDraw = null;
   }
 
   function drawFromOpenRow(game, cardId) {
@@ -191,6 +193,35 @@ const CascadeEngine = (() => {
     );
     r.part = 2;
     r.comeOutAccum = 0;
+    r.lastDraw = { source: 'row', takenCards: taken.slice(), obligationCardId: bottomCard.id };
+  }
+
+  // Taking from the open row is voluntary in principle (§2.5) — a player
+  // shouldn't take a card they can't meld — but nothing stops a human from
+  // doing it anyway and then discovering they're stuck. This is the escape
+  // hatch: undo the pickup, provided nothing else has happened yet this
+  // turn (any other Part 2 action clears lastDraw, closing the window).
+  function canUndoDraw(game) {
+    const r = game.round;
+    return r.part === 2 && !!r.lastDraw && r.lastDraw.source === 'row';
+  }
+
+  function undoDraw(game) {
+    const r = game.round;
+    if (!canUndoDraw(game)) throw new Error('Nothing to undo.');
+    const { takenCards, obligationCardId } = r.lastDraw;
+    const hand = r.hands[r.current];
+    for (const c of takenCards) {
+      if (findCard(hand, c.id) === -1) throw new Error('Cannot undo — hand has changed since the draw.');
+    }
+    for (const c of takenCards) {
+      hand.splice(findCard(hand, c.id), 1);
+    }
+    r.openRow.push(...takenCards);
+    r.pendingObligations = r.pendingObligations.filter((id) => id !== obligationCardId);
+    r.part = 1;
+    r.lastDraw = null;
+    logMsg(game, `Player ${r.current + 1} undid taking from the open row.`);
   }
 
   // --- Meld validation ------------------------------------------------------
@@ -252,7 +283,11 @@ const CascadeEngine = (() => {
       for (const c of cards) {
         let rank;
         if (c.real.rank === 'JOKER') {
-          if (!c.wildAs || c.wildAs.suit !== suit) { ok = false; break; }
+          // A joker's suit in a run is always the run's own suit — it's
+          // implied, not something the caller needs to (mis)supply. Only
+          // the rank is meaningful, since that's what fixes its position
+          // in the sequence.
+          if (!c.wildAs || !c.wildAs.rank) { ok = false; break; }
           rank = c.wildAs.rank;
         } else {
           rank = c.real.rank;
@@ -299,10 +334,15 @@ const CascadeEngine = (() => {
     const slots = cardSelections.map((s) => {
       const ci = findCard(hand, s.cardId);
       const [card] = hand.splice(ci, 1);
-      return { card, ownerId: r.current, wildAs: s.wildAs || null };
+      // Only rank is ever meaningful (see meldSuit) — normalize away any
+      // suit the caller may have supplied so it can't end up in a display
+      // label implying the joker impersonates one specific existing card.
+      const wildAs = card.rank === 'JOKER' && s.wildAs ? { rank: s.wildAs.rank } : null;
+      return { card, ownerId: r.current, wildAs };
     });
     const meld = { id: `m${r.tableau.length}-${Date.now()}`, type: result.type, slots };
     r.tableau.push(meld);
+    r.lastDraw = null; // an action happened this turn — the pickup can no longer be undone
 
     // clear pending obligations satisfied by this meld
     clearObligations(r, slots.map((s) => s.card.id));
@@ -339,16 +379,15 @@ const CascadeEngine = (() => {
     const card = hand[ci];
 
     if (meld.type === 'set') {
-      const rank = meld.slots.find((s) => s.card.rank !== 'JOKER')?.card.rank
-        ?? meld.slots.find((s) => s.wildAs)?.wildAs.rank;
+      const rank = meld.slots.find((s) => s.card.rank !== 'JOKER').card.rank;
       const cardRank = card.rank === 'JOKER' ? (wildAs && wildAs.rank) : card.rank;
       if (cardRank !== rank) throw new Error('Card does not match the set rank.');
     } else {
-      const suit = meld.slots.find((s) => s.card.rank !== 'JOKER')?.card.suit
-        ?? meld.slots.find((s) => s.wildAs)?.wildAs.suit;
-      const aceHigh = meld.aceHigh;
+      // A joker's suit in a run is always the run's own suit (implied, not
+      // something the caller needs to supply) — only rank is meaningful.
+      const suit = meldSuit(meld);
       const seq = meldRunValues(meld);
-      const cardSuit = card.rank === 'JOKER' ? (wildAs && wildAs.suit) : card.suit;
+      const cardSuit = card.rank === 'JOKER' ? suit : card.suit;
       const cardRank = card.rank === 'JOKER' ? (wildAs && wildAs.rank) : card.rank;
       if (cardSuit !== suit) throw new Error('Card does not match the run suit.');
       const v = orderedRankValue(cardRank, seq.aceHigh);
@@ -358,9 +397,18 @@ const CascadeEngine = (() => {
     }
 
     hand.splice(ci, 1);
-    meld.slots.push({ card, ownerId: r.current, wildAs: card.rank === 'JOKER' ? wildAs : null });
+    meld.slots.push({ card, ownerId: r.current, wildAs: card.rank === 'JOKER' ? { rank: wildAs.rank } : null });
     clearObligations(r, [card.id]);
+    r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} added ${card.rank}${card.suit || ''} to a ${meld.type}.`);
+  }
+
+  // A meld always has at least one real (non-joker) card — enforced at
+  // creation (tryAsSet/tryAsRun both reject an all-joker selection) — so
+  // this is always resolvable for a valid run.
+  function meldSuit(meld) {
+    const real = meld.slots.find((s) => s.card.rank !== 'JOKER');
+    return real ? real.card.suit : null;
   }
 
   function meldRunValues(meld) {
@@ -399,7 +447,7 @@ const CascadeEngine = (() => {
     if (meld.type === 'set') {
       if (replacement.rank !== slot.wildAs.rank) throw new Error('Replacement rank does not match.');
     } else {
-      if (replacement.rank !== slot.wildAs.rank || replacement.suit !== slot.wildAs.suit) {
+      if (replacement.rank !== slot.wildAs.rank || replacement.suit !== meldSuit(meld)) {
         throw new Error('Replacement card does not match what the joker represents.');
       }
     }
@@ -408,6 +456,7 @@ const CascadeEngine = (() => {
     hand.push(slot.card); // joker returns to hand
     r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
     clearObligations(r, [replacement.id]);
+    r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} swapped a joker for ${replacement.rank}${replacement.suit || ''}.`);
   }
 
@@ -453,6 +502,7 @@ const CascadeEngine = (() => {
       r.tableau = r.tableau.filter((m) => m.id !== meldId);
     }
     for (const slot of pulled) r.hands[r.current].push(slot.card);
+    r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} pulled ${pulled.length} card(s) back from the tableau.`);
   }
 
@@ -484,6 +534,7 @@ const CascadeEngine = (() => {
     r.current = other(r.current);
     r.part = 1;
     r.comeOutAccum = 0;
+    r.lastDraw = null;
   }
 
   // --- Round / game end ---------------------------------------------------
@@ -575,6 +626,8 @@ const CascadeEngine = (() => {
     canDrawFromRow,
     drawFromClosedPile,
     drawFromOpenRow,
+    canUndoDraw,
+    undoDraw,
     validateNewMeldSelection,
     hasComeOut,
     layNewMeld,
@@ -585,6 +638,7 @@ const CascadeEngine = (() => {
     discard,
     orderedRankValue,
     meldRunValues,
+    meldSuit,
     roundMeldPointsSoFar,
     liveScore,
   };

@@ -176,12 +176,22 @@ function renderOpenRow() {
   el.innerHTML = '';
   const r = game.round;
   const pickable = r.part === 1 && r.current === 0 && r.part !== 'turn0' && CascadeEngine.canDrawFromRow(game);
-  r.openRow.forEach((card) => {
+  r.openRow.forEach((card, idx) => {
     el.appendChild(
       buildCardEl(card, {
         pickable,
         onClick: pickable
           ? () => {
+              const hand = r.hands[0];
+              const scoopCards = r.openRow.slice(idx); // this card + everything discarded after it
+              if (!CascadeAI.canResolvePickup(hand, scoopCards, card.id)) {
+                const scoop = scoopCards.length;
+                const ok = window.confirm(
+                  `Taking this card would also scoop ${scoop} card(s), and ${cardText(card)} must be melded this turn — ` +
+                  `but no legal meld for it seems possible with your current hand. Take it anyway?`
+                );
+                if (!ok) return;
+              }
               try {
                 CascadeEngine.drawFromOpenRow(game, card.id);
                 render();
@@ -285,12 +295,13 @@ function renderControls() {
       const c = hand.find((h) => h.id === id);
       return c ? cardText(c) : id;
     });
-    obligEl.textContent = `Must meld: ${names.join(', ')}`;
+    obligEl.textContent = `Must meld: ${names.join(', ')}${CascadeEngine.canUndoDraw(game) ? ' (stuck? use "Undo pickup")' : ''}`;
   } else {
     obligEl.hidden = true;
   }
 
   $('drawPileBtn').disabled = !(isHumanTurn && r.part === 1);
+  $('undoDrawBtn').disabled = !(isHumanTurn && CascadeEngine.canUndoDraw(game));
   $('layMeldBtn').disabled = !(isHumanTurn && r.part === 2 && selected.length >= 3);
   $('addToMeldBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedMeldId);
   const targetedMeld = r.tableau.find((m) => m.id === targetedMeldId);
@@ -323,6 +334,16 @@ $('drawPileBtn').addEventListener('click', () => {
   }
 });
 
+$('undoDrawBtn').addEventListener('click', () => {
+  try {
+    CascadeEngine.undoDraw(game);
+    selectedHandCardIds.clear();
+    afterHumanAction();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
 $('layMeldBtn').addEventListener('click', () => {
   const hand = game.round.hands[0];
   const ids = [...selectedHandCardIds];
@@ -332,9 +353,11 @@ $('layMeldBtn').addEventListener('click', () => {
   const jokerCards = selectedCards.filter((c) => c.rank === 'JOKER');
   const wildAsMap = {};
   for (const j of jokerCards) {
+    // Only rank matters — suit (if the meld turns out to be a run) is
+    // always implied by the meld's real cards, never a separate choice.
     const rank = promptRank(`Joker stands in for which rank?`);
     if (!rank) return;
-    wildAsMap[j.id] = { rank, suit: nonJoker.suit };
+    wildAsMap[j.id] = { rank };
   }
   const selections = ids.map((id) => (wildAsMap[id] ? { cardId: id, wildAs: wildAsMap[id] } : { cardId: id }));
   try {
@@ -354,10 +377,11 @@ $('addToMeldBtn').addEventListener('click', () => {
   const meld = game.round.tableau.find((m) => m.id === targetedMeldId);
   let wildAs;
   if (card.rank === 'JOKER') {
+    // Only rank matters — a run's suit is always implied by its real
+    // cards, never something the caller needs to supply.
     const rank = promptRank(`Joker stands in for which rank in this ${meld.type}?`);
     if (!rank) return;
-    const suit = meld.type === 'run' ? meld.slots.find((s) => s.card.rank !== 'JOKER')?.card.suit ?? meld.slots.find((s) => s.wildAs)?.wildAs.suit : undefined;
-    wildAs = { rank, suit };
+    wildAs = { rank };
   }
   try {
     CascadeEngine.addToMeld(game, targetedMeldId, cardId, wildAs);

@@ -49,11 +49,26 @@ Real-click verification (not just programmatic `.click()` — see the
 pull-entire-meld interactions and the live score display all work through
 actual mouse hit-testing, not just direct engine calls.
 
+**Getting stuck after an open-row pickup (2026-07-26 fix)**: taking from the
+row is voluntary, but nothing stopped a player from taking a card they
+couldn't actually meld and then having no legal move at all. Fixed two ways:
+clicking a row card now warns first if no legal meld for the obligated
+(bottom) card seems possible given your current hand, and if you take it
+anyway (or the check misses something) an "Undo pickup" button reverts the
+draw completely — available until you do anything else that turn.
+
+**Joker "duplicate card" display bug (2026-07-26 fix)**: a joker used in a
+set was being tagged with the same suit as the real card next to it (e.g.
+"J→A♠" sitting beside a real A♠), making it look like a physically
+impossible duplicate. It wasn't actually a duplicate — just a bad label. For
+sets, suit is meaningless; for runs, a joker's suit is always implied by the
+run's real cards, never something that needs to be separately tracked or
+displayed. Jokers now only ever carry a rank.
+
 ## Known simplifications (mock, not final spec)
 
-- **Joker wildcard rank/suit entry uses `prompt()` dialogs**, not a proper
-  picker UI — fine for testing legality/flow, not representative of final
-  UX.
+- **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker
+  UI — fine for testing legality/flow, not representative of final UX.
 - **AI is a greedy heuristic** (first candidate meld found, cheapest-looking
   row pickups only, never uses tableau rearrangement or joker swaps) — not
   the phase-2 AI, and not tuned for a good game feel. It does verify a row

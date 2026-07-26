@@ -77,6 +77,18 @@ const CascadeAI = (() => {
     return out;
   }
 
+  // Taking from the open row is voluntary, and the bottom card MUST be
+  // melded this turn (§2.5) — this checks whether a meld containing it is
+  // actually formable from hand + the whole scoop, so neither the AI nor
+  // (via app.js) a human gets a false sense that a pickup is safe.
+  function canResolvePickup(hand, openRow, cardId) {
+    const hypotheticalHand = hand.concat(openRow);
+    const jokersLeft = hypotheticalHand.filter((c) => c.rank === 'JOKER');
+    const sets = findCandidateSets(hypotheticalHand, jokersLeft);
+    const runs = findCandidateRuns(hypotheticalHand, jokersLeft);
+    return [...sets, ...runs].some((cand) => cand.slots.some((s) => s.cardId === cardId));
+  }
+
   function pickDraw(game) {
     const r = game.round;
     const E_ = E();
@@ -86,16 +98,7 @@ const CascadeAI = (() => {
     const hand = r.hands[r.current];
     const wouldHelp = hand.some((c) => c.rank === bottom.rank || c.suit === bottom.suit);
     if (scoopSize > 2 || !wouldHelp) return { source: 'closed' };
-    // Taking is voluntary, and the bottom card MUST be melded this turn
-    // (§2.5) — only take it if a meld containing it is actually formable
-    // from hand + the whole scoop, so the AI never strands itself with an
-    // unresolvable obligation.
-    const hypotheticalHand = hand.concat(r.openRow);
-    const jokersLeft = hypotheticalHand.filter((c) => c.rank === 'JOKER');
-    const sets = findCandidateSets(hypotheticalHand, jokersLeft);
-    const runs = findCandidateRuns(hypotheticalHand, jokersLeft);
-    const canResolve = [...sets, ...runs].some((cand) => cand.slots.some((s) => s.cardId === bottom.id));
-    if (!canResolve) return { source: 'closed' };
+    if (!canResolvePickup(hand, r.openRow, bottom.id)) return { source: 'closed' };
     return { source: 'row', cardId: bottom.id };
   }
 
@@ -244,7 +247,7 @@ const CascadeAI = (() => {
     callbacks.onStateChanged();
   }
 
-  return { takeTurn, pickDraw, pickDiscard };
+  return { takeTurn, pickDraw, pickDiscard, canResolvePickup };
 })();
 
 if (typeof window !== 'undefined') window.CascadeAI = CascadeAI;
