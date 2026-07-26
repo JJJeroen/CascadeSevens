@@ -79,13 +79,24 @@ const CascadeAI = (() => {
 
   function pickDraw(game) {
     const r = game.round;
-    if (!E().canDrawFromRow(game)) return { source: 'closed' };
+    const E_ = E();
+    if (!E_.canDrawFromRow(game)) return { source: 'closed' };
     const bottom = r.openRow[0];
     const scoopSize = r.openRow.length;
     const hand = r.hands[r.current];
     const wouldHelp = hand.some((c) => c.rank === bottom.rank || c.suit === bottom.suit);
-    if (scoopSize <= 2 && wouldHelp) return { source: 'row', cardId: bottom.id };
-    return { source: 'closed' };
+    if (scoopSize > 2 || !wouldHelp) return { source: 'closed' };
+    // Taking is voluntary, and the bottom card MUST be melded this turn
+    // (§2.5) — only take it if a meld containing it is actually formable
+    // from hand + the whole scoop, so the AI never strands itself with an
+    // unresolvable obligation.
+    const hypotheticalHand = hand.concat(r.openRow);
+    const jokersLeft = hypotheticalHand.filter((c) => c.rank === 'JOKER');
+    const sets = findCandidateSets(hypotheticalHand, jokersLeft);
+    const runs = findCandidateRuns(hypotheticalHand, jokersLeft);
+    const canResolve = [...sets, ...runs].some((cand) => cand.slots.some((s) => s.cardId === bottom.id));
+    if (!canResolve) return { source: 'closed' };
+    return { source: 'row', cardId: bottom.id };
   }
 
   function playPart2(game) {
@@ -97,14 +108,31 @@ const CascadeAI = (() => {
       const jokersLeft = hand.filter((c) => c.rank === 'JOKER');
       const obligated = r.pendingObligations.slice();
 
+      // Obligated cards (from an open-row pickup, §2.5) come first regardless
+      // of come-out status — laying a brand-new meld is always legal even
+      // pre-come-out, so this can't get starved out by come-out melds that
+      // don't happen to include the obligated card.
+      if (obligated.length > 0) {
+        const cardId = obligated[0];
+        const card = hand.find((c) => c.id === cardId);
+        if (!card) { r.pendingObligations.shift(); continue; }
+        const placed =
+          (E_.hasComeOut(game) && tryPlaceSingleCard(game, card)) ||
+          tryLayMeldContaining(game, cardId, hand, jokersLeft);
+        if (!placed) break; // shouldn't happen — pickDraw only takes resolvable pickups
+        continue;
+      }
+
       if (!E_.hasComeOut(game)) {
         const sets = findCandidateSets(hand, jokersLeft);
         const runs = findCandidateRuns(hand, jokersLeft);
         const candidates = [...sets, ...runs].sort((a, b) => b.value - a.value);
         const fourKind = sets.find((s) => s.slots.length === 4);
         if (fourKind) {
-          E_.layNewMeld(game, fourKind.slots);
-          continue;
+          try {
+            E_.layNewMeld(game, fourKind.slots);
+            continue;
+          } catch (e) { /* would empty the hand — fall through to the value-based attempt below */ }
         }
         // Try to reach 40 with as few melds as possible.
         let acc = r.comeOutAccum;
@@ -119,19 +147,6 @@ const CascadeAI = (() => {
           } catch (e) { /* skip invalid, try next */ }
         }
         if (!played) break; // can't come out this turn
-        continue;
-      }
-
-      // Already come out: meld obligated cards first, then opportunistically shed cards.
-      if (obligated.length > 0) {
-        const cardId = obligated[0];
-        const card = hand.find((c) => c.id === cardId);
-        if (!card) { r.pendingObligations.shift(); continue; }
-        const placed = tryPlaceSingleCard(game, card) || tryLayMeldContaining(game, cardId, hand, jokersLeft);
-        if (!placed) {
-          // fall back: build any 3-card meld around it if at all possible, else give up (shouldn't happen often)
-          break;
-        }
         continue;
       }
 
@@ -210,19 +225,16 @@ const CascadeAI = (() => {
       return;
     }
 
-    const draw = pickDraw(game);
-    if (draw.source === 'row') E_.drawFromOpenRow(game, draw.cardId);
-    else E_.drawFromClosedPile(game);
-    if (r.ended) { callbacks.onStateChanged(); return; }
-    callbacks.onStateChanged();
+    if (r.part === 1) {
+      const draw = pickDraw(game);
+      if (draw.source === 'row') E_.drawFromOpenRow(game, draw.cardId);
+      else E_.drawFromClosedPile(game);
+      if (r.ended) { callbacks.onStateChanged(); return; }
+      callbacks.onStateChanged();
+    }
 
     playPart2(game);
     if (r.ended) { callbacks.onStateChanged(); return; }
-    if (r.hands[r.current].length === 0) {
-      E_.meldedAwayWholeHand(game);
-      callbacks.onStateChanged();
-      return;
-    }
     callbacks.onStateChanged();
 
     if (E_.canProceedToDiscard(game)) {

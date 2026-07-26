@@ -71,7 +71,6 @@ function nextRound() {
 }
 
 function afterHumanAction() {
-  if (!game.round.ended) CascadeEngine.meldedAwayWholeHand(game);
   render();
   scheduleIfAITurn();
 }
@@ -100,8 +99,8 @@ function scheduleIfAITurn() {
 
 function render() {
   if (!game) return;
-  $('scoreP1').textContent = game.scores[0];
-  $('scoreP2').textContent = game.scores[1];
+  $('scoreP1').textContent = CascadeEngine.liveScore(game, 0);
+  $('scoreP2').textContent = CascadeEngine.liveScore(game, 1);
   $('roundNum').textContent = game.roundNumber;
   $('pileCount').textContent = game.round.closedPile.length;
 
@@ -202,6 +201,7 @@ function renderTableau() {
   const el = $('tableau');
   el.innerHTML = '';
   const r = game.round;
+  const canRearrange = r.part === 2 && r.current === 0 && !r.ended && r.comeOut[0];
   r.tableau.forEach((meld) => {
     const box = document.createElement('div');
     box.className = 'meld' + (meld.id === targetedMeldId ? ' targeted' : '');
@@ -212,7 +212,19 @@ function renderTableau() {
     const cardsWrap = document.createElement('div');
     cardsWrap.className = 'meld-cards';
     meld.slots.forEach((slot) => {
-      cardsWrap.appendChild(buildCardEl(slot.card, { ownerId: slot.ownerId, wildAs: slot.wildAs }));
+      const cardEl = buildCardEl(slot.card, { ownerId: slot.ownerId, wildAs: slot.wildAs, pickable: canRearrange });
+      if (canRearrange) {
+        cardEl.addEventListener('click', (ev) => {
+          ev.stopPropagation(); // don't also toggle meld targeting
+          try {
+            CascadeEngine.pullFromMeld(game, meld.id, [slot.card.id]);
+            afterHumanAction();
+          } catch (e) {
+            showError(e.message);
+          }
+        });
+      }
+      cardsWrap.appendChild(cardEl);
     });
     box.appendChild(cardsWrap);
     el.appendChild(box);
@@ -284,6 +296,7 @@ function renderControls() {
   const targetedMeld = r.tableau.find((m) => m.id === targetedMeldId);
   const targetedHasJoker = targetedMeld && targetedMeld.slots.some((s) => s.card.rank === 'JOKER');
   $('swapJokerBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedHasJoker);
+  $('pullMeldBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
   $('discardBtn').disabled = !(isHumanTurn && r.part === 2 && r.pendingObligations.length === 0 && selected.length === 1);
 }
 
@@ -363,6 +376,19 @@ $('swapJokerBtn').addEventListener('click', () => {
   try {
     CascadeEngine.swapJoker(game, meld.id, jokerSlot.card.id, cardId);
     selectedHandCardIds.clear();
+    afterHumanAction();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
+$('pullMeldBtn').addEventListener('click', () => {
+  const meld = game.round.tableau.find((m) => m.id === targetedMeldId);
+  if (!meld) return showError('Target a meld first.');
+  const allCardIds = meld.slots.map((s) => s.card.id);
+  try {
+    CascadeEngine.pullFromMeld(game, meld.id, allCardIds);
+    targetedMeldId = null;
     afterHumanAction();
   } catch (e) {
     showError(e.message);

@@ -60,13 +60,13 @@ const CascadeEngine = (() => {
       comeOut: [false, false],
       current: 0, // player index whose turn it is
       part: 'turn0', // 'turn0' | 1 | 2 | 3
-      turn0: { offered: [0, 1], acceptedBy: null, secondOffered: false, resolved: false },
+      turn0: { stage: 'p1first', resolved: false }, // stage: p1first -> p2second -> p1followup -> resolved
       pendingObligations: [], // card ids that must appear in a meld action before Part 3
       comeOutAccum: 0, // running total of NEW meld value laid this turn pre-come-out
       comeOutMetThisTurn: false,
       log: [],
       ended: false,
-      endReason: null, // 'handout' | 'midturn-handout' | 'pile-empty'
+      endReason: null, // 'handout' | 'pile-empty'
       roundWinner: null,
     };
     logMsg(game, `Round ${game.roundNumber} dealt. Mode: ${game.mode}.`);
@@ -86,33 +86,40 @@ const CascadeEngine = (() => {
   }
 
   // --- Turn 0: starter-card exchange (§2.6) -------------------------------
+  // Asymmetric (revised 2026-07-26): P1 is offered first. If P1 takes it,
+  // Turn 0 ends immediately — no follow-up for P2. If P1 declines, P2 is
+  // offered; if P2 also declines, Turn 0 never triggers at all. If P2
+  // takes it, P1 gets one consolation follow-up look at the newly-placed
+  // card, and Turn 0 ends after that regardless of P1's answer.
 
   // Who is currently being asked to accept/decline the Turn 0 exchange
   // (null once Turn 0 has fully resolved).
   function turn0CurrentAskee(game) {
     const r = game.round;
     if (r.part !== 'turn0' || r.turn0.resolved) return null;
-    const t = r.turn0;
-    if (t.acceptedBy === null) return t.offered.length ? t.offered[0] : null;
-    return other(t.acceptedBy);
+    const stage = r.turn0.stage;
+    if (stage === 'p1first' || stage === 'p1followup') return 0;
+    if (stage === 'p2second') return 1;
+    return null;
   }
 
   function turn0Decline(game) {
     const t = game.round.turn0;
     if (t.resolved) throw new Error('Turn 0 already resolved.');
-    if (t.acceptedBy === null) {
-      t.offered.shift();
-      if (t.offered.length === 0) {
-        t.resolved = true;
-        logMsg(game, 'Both players declined the Turn 0 exchange.');
-        beginNormalRotation(game);
-      }
-    } else {
-      // second askee declined the single follow-up swap
-      t.resolved = true;
-      logMsg(game, 'Turn 0 exchange ends after one swap.');
-      beginNormalRotation(game);
+    if (t.stage === 'p1first') {
+      t.stage = 'p2second';
+      return;
     }
+    if (t.stage === 'p2second') {
+      t.resolved = true;
+      logMsg(game, 'Both players declined the Turn 0 exchange.');
+      beginNormalRotation(game);
+      return;
+    }
+    // t.stage === 'p1followup': P1 declined the consolation look.
+    t.resolved = true;
+    logMsg(game, 'Turn 0 exchange ends after one swap.');
+    beginNormalRotation(game);
   }
 
   function turn0Accept(game, replacementCardId) {
@@ -129,10 +136,13 @@ const CascadeEngine = (() => {
     r.openRow.push(placed);
     logMsg(game, `Player ${takerIdx + 1} took the starter card and swapped in ${placed.rank}${placed.suit || ''}.`);
 
-    if (t.acceptedBy === null) {
-      t.acceptedBy = takerIdx;
-      t.secondOffered = true; // now offer the other player the single swap, once
+    if (t.stage === 'p1first') {
+      t.resolved = true; // P1 taking it immediately ends Turn 0 — no follow-up for P2.
+      beginNormalRotation(game);
+    } else if (t.stage === 'p2second') {
+      t.stage = 'p1followup'; // P1 passed on it, so P1 gets one consolation look now.
     } else {
+      // t.stage === 'p1followup'
       t.resolved = true;
       beginNormalRotation(game);
     }
@@ -149,7 +159,7 @@ const CascadeEngine = (() => {
 
   function canDrawFromRow(game) {
     const r = game.round;
-    return r.comeOut[r.current] && r.openRow.length > 0;
+    return r.openRow.length > 0;
   }
 
   function drawFromClosedPile(game) {
@@ -169,7 +179,6 @@ const CascadeEngine = (() => {
   function drawFromOpenRow(game, cardId) {
     const r = game.round;
     if (r.part !== 1) throw new Error('Not in Part 1.');
-    if (!r.comeOut[r.current]) throw new Error('Must come out before drawing from the open row.');
     const idx = r.openRow.findIndex((c) => c.id === cardId);
     if (idx === -1) throw new Error('Card not in open row.');
     const taken = r.openRow.splice(idx); // this card + everything after it
@@ -281,6 +290,9 @@ const CascadeEngine = (() => {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
     const hand = r.hands[r.current];
+    if (cardSelections.length === hand.length) {
+      throw new Error('Cannot use your entire hand in a meld — you must keep at least one card to discard.');
+    }
     const result = validateNewMeldSelection(hand, cardSelections);
     if (!result.ok) throw new Error(result.error);
 
@@ -317,6 +329,9 @@ const CascadeEngine = (() => {
     if (r.part !== 2) throw new Error('Not in Part 2.');
     if (!r.comeOut[r.current]) throw new Error('Must come out before adding to any meld.');
     const hand = r.hands[r.current];
+    if (hand.length <= 1) {
+      throw new Error('Cannot add your last card in hand to a meld — you must keep at least one card to discard.');
+    }
     const ci = findCard(hand, cardId);
     if (ci === -1) throw new Error('Card not in hand.');
     const meld = r.tableau.find((m) => m.id === meldId);
@@ -396,6 +411,51 @@ const CascadeEngine = (() => {
     logMsg(game, `Player ${r.current + 1} swapped a joker for ${replacement.rank}${replacement.suit || ''}.`);
   }
 
+  // Validates a set of already-materialized meld slots ({card, wildAs}) —
+  // used to check what's left behind in a meld after pulling a card out.
+  function validateMeldSlots(slots) {
+    const cards = slots.map((s) => ({ real: s.card, wildAs: s.wildAs }));
+    const setResult = tryAsSet(cards);
+    if (setResult.ok) return setResult;
+    return tryAsRun(cards);
+  }
+
+  // Tableau rearrangement (§2.3, §3 decision 2): pull one or more cards
+  // back out of any meld — own or opponent's — into hand, atomically (all
+  // named cards leave together). What's left behind must either be empty
+  // (meld fully dissolves) or still a valid 3+-card set/run. This has to
+  // be atomic, not one-card-at-a-time: shrinking a meld to 1 or 2 cards is
+  // always illegal, so a single-card-only API could never fully dissolve
+  // *any* meld (every path from 3+ down to 0 passes through 1 or 2).
+  // Re-laying the pulled cards is just a normal layNewMeld/addToMeld call
+  // afterward, since they're sitting in hand like any other card.
+  function pullFromMeld(game, meldId, cardIds) {
+    const r = game.round;
+    if (r.part !== 2) throw new Error('Not in Part 2.');
+    if (!r.comeOut[r.current]) throw new Error('Must come out before rearranging the tableau.');
+    const meld = r.tableau.find((m) => m.id === meldId);
+    if (!meld) throw new Error('Meld not found.');
+    const ids = Array.isArray(cardIds) ? cardIds : [cardIds];
+    if (ids.length === 0) throw new Error('No cards specified to pull.');
+    const pulled = [];
+    const remaining = [];
+    for (const slot of meld.slots) {
+      if (ids.includes(slot.card.id)) pulled.push(slot);
+      else remaining.push(slot);
+    }
+    if (pulled.length !== ids.length) throw new Error('Some cards were not found in that meld.');
+    if (remaining.length > 0) {
+      const check = remaining.length >= 3 ? validateMeldSlots(remaining) : { ok: false };
+      if (!check.ok) throw new Error('Pulling those cards would leave an invalid meld behind (fewer than 3 cards, or a broken run).');
+    }
+    meld.slots = remaining;
+    if (meld.slots.length === 0) {
+      r.tableau = r.tableau.filter((m) => m.id !== meldId);
+    }
+    for (const slot of pulled) r.hands[r.current].push(slot.card);
+    logMsg(game, `Player ${r.current + 1} pulled ${pulled.length} card(s) back from the tableau.`);
+  }
+
   // --- Part 3: discard --------------------------------------------------------
 
   function canProceedToDiscard(game) {
@@ -419,16 +479,6 @@ const CascadeEngine = (() => {
     advanceTurn(game);
   }
 
-  function meldedAwayWholeHand(game) {
-    // called by app.js right after a meld action if hand is now empty
-    const r = game.round;
-    if (r.hands[r.current].length === 0 && r.pendingObligations.length === 0) {
-      endRoundHandOut(game, r.current, true);
-      return true;
-    }
-    return false;
-  }
-
   function advanceTurn(game) {
     const r = game.round;
     r.current = other(r.current);
@@ -438,10 +488,10 @@ const CascadeEngine = (() => {
 
   // --- Round / game end ---------------------------------------------------
 
-  function endRoundHandOut(game, winnerIdx, midTurn = false) {
+  function endRoundHandOut(game, winnerIdx) {
     const r = game.round;
     r.ended = true;
-    r.endReason = midTurn ? 'midturn-handout' : 'handout';
+    r.endReason = 'handout';
     r.roundWinner = winnerIdx;
     scoreRound(game);
   }
@@ -484,6 +534,23 @@ const CascadeEngine = (() => {
     checkGameEnd(game);
   }
 
+  // §2.8 "app behavior": live running score, not just a round-end lump sum.
+  // Meld points already on the table score for the round in progress even
+  // before it ends, so the UI can show an always-current total.
+  function roundMeldPointsSoFar(game, playerIdx) {
+    let total = 0;
+    for (const meld of game.round.tableau) {
+      for (const slot of meld.slots) {
+        if (slot.ownerId === playerIdx) total += pointValue(slot.card.rank);
+      }
+    }
+    return total;
+  }
+
+  function liveScore(game, playerIdx) {
+    return game.scores[playerIdx] + roundMeldPointsSoFar(game, playerIdx);
+  }
+
   function checkGameEnd(game) {
     const [a, b] = game.scores;
     if (a > game.threshold && a > b) {
@@ -513,11 +580,13 @@ const CascadeEngine = (() => {
     layNewMeld,
     addToMeld,
     swapJoker,
+    pullFromMeld,
     canProceedToDiscard,
     discard,
-    meldedAwayWholeHand,
     orderedRankValue,
     meldRunValues,
+    roundMeldPointsSoFar,
+    liveScore,
   };
 })();
 

@@ -29,10 +29,10 @@
   <main id="banner" class="banner" hidden></main>
 
   <section class="table">
-    <h2>Open Row <span class="hint">(click a card to scoop it + everything on top, once you've come out)</span></h2>
+    <h2>Open Row <span class="hint">(click a card to scoop it + everything on top — the bottom one must be melded this turn)</span></h2>
     <div id="openRow" class="open-row"></div>
 
-    <h2>Tableau <span class="hint">(shared — click a meld to target it for Add/Swap)</span></h2>
+    <h2>Tableau <span class="hint">(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)</span></h2>
     <div id="tableau" class="tableau"></div>
   </section>
 
@@ -47,6 +47,7 @@
       <button id="layMeldBtn">Lay new meld from selected</button>
       <button id="addToMeldBtn">Add selected card to targeted meld</button>
       <button id="swapJokerBtn">Swap targeted joker for selected card</button>
+      <button id="pullMeldBtn">Pull entire targeted meld back to hand</button>
       <button id="discardBtn">Discard selected</button>
     </div>
   </section>
