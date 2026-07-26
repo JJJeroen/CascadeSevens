@@ -91,6 +91,19 @@ actual play:
   multi-card selection left over from an earlier attempt, silently still
   counted.
 
+**Third playtest round, same day (2026-07-26)** — the live-score display
+(added in round one) surfaced a rule bug that pure engine testing never
+would have: a player's 30-point come-out attempt was visibly sitting on the
+tableau, but the app still said "not come out yet" with no way to explain
+why. Root cause: `comeOutAccum` was a single value reset to 0 at the start
+of every turn, so a below-40 attempt effectively evaporated the moment the
+turn ended. Confirmed against the game's designer: **come-out progress
+carries forward across turns** — a 30-point attempt today plus a 15-point
+meld three turns later still crosses 40 and comes out. Fixed by making
+`comeOutAccum` a per-player array that's only ever incremented, never reset
+mid-round (§2.4/§3 decision 10). The turn label now also shows live
+progress toward 40 when it's non-zero, so this shouldn't be confusing again.
+
 **Known interaction risk, not a bug (found via testing, 2026-07-26)**: open-
 row cards visually overlap by design (the cascade effect), so a later card
 can sit on top of most of an earlier one. Clicking near the exact geometric

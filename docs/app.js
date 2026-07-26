@@ -292,13 +292,14 @@ function renderControls() {
   const selected = [...selectedHandCardIds].map((id) => hand.find((c) => c.id === id)).filter(Boolean);
   const comeOut = r.comeOut[0];
 
+  const comeOutProgress = !comeOut && r.comeOutAccum[0] > 0 ? ` (come-out progress: ${r.comeOutAccum[0]}/40, carries forward until you cross it)` : comeOut ? '' : ' (not come out yet)';
   $('turnLabel').textContent = game.gameOver
     ? 'Game over'
     : r.ended
     ? 'Round over'
     : r.part === 'turn0'
     ? 'Turn 0 — starter exchange'
-    : `Player ${r.current + 1}'s turn — Part ${r.part}${r.current === 0 ? (comeOut ? '' : ' (not come out yet)') : ''}`;
+    : `Player ${r.current + 1}'s turn — Part ${r.part}${r.current === 0 ? comeOutProgress : ''}`;
 
   const obligEl = $('obligationLabel');
   if (isHumanTurn && r.pendingObligations.length > 0) {

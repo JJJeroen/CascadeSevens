@@ -138,7 +138,7 @@ const CascadeAI = (() => {
           } catch (e) { /* would empty the hand — fall through to the value-based attempt below */ }
         }
         // Try to reach 40 with as few melds as possible.
-        let acc = r.comeOutAccum;
+        let acc = r.comeOutAccum[r.current];
         let played = false;
         for (const cand of candidates) {
           if (acc >= 40) break;

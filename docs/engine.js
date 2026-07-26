@@ -64,7 +64,7 @@ const CascadeEngine = (() => {
       pendingObligations: [], // card ids that must appear in a meld action before Part 3
       lastDraw: null, // { source: 'row', takenCards, priorObligations } — undoable until any other Part 2 action happens
       rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
-      comeOutAccum: 0, // running total of NEW meld value laid this turn pre-come-out
+      comeOutAccum: [0, 0], // per-player running total toward the 40-point come-out bar (§2.4) — persists across turns until crossed, confirmed against the designer 2026-07-26
       comeOutMetThisTurn: false,
       log: [],
       ended: false,
@@ -194,7 +194,6 @@ const CascadeEngine = (() => {
     r.hands[r.current].push(card);
     logMsg(game, `Player ${r.current + 1} drew from the closed pile.`);
     r.part = 2;
-    r.comeOutAccum = 0;
     r.lastDraw = null;
   }
 
@@ -228,7 +227,6 @@ const CascadeEngine = (() => {
     const r = game.round;
     if (!canFinishDrawing(game)) throw new Error('Nothing to finish — draw first.');
     r.part = 2;
-    r.comeOutAccum = 0;
     r.lastDraw = null;
   }
 
@@ -460,9 +458,9 @@ const CascadeEngine = (() => {
 
     const value = meldValueFromSlots(slots);
     if (!r.comeOut[r.current]) {
-      r.comeOutAccum += value;
+      r.comeOutAccum[r.current] += value;
       const fourOfAKind = result.type === 'set' && result.isFourOfAKind;
-      if (r.comeOutAccum >= 40 || fourOfAKind) {
+      if (r.comeOutAccum[r.current] >= 40 || fourOfAKind) {
         r.comeOut[r.current] = true;
         logMsg(game, `Player ${r.current + 1} has come out!`);
       }
@@ -662,7 +660,6 @@ const CascadeEngine = (() => {
     const r = game.round;
     r.current = other(r.current);
     r.part = 1;
-    r.comeOutAccum = 0;
     r.lastDraw = null;
     r.rowDrawsThisPart1 = 0;
   }
