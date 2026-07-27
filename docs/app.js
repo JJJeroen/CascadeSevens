@@ -312,8 +312,13 @@ function renderTableau() {
 // successful commit. Click a card to pick it up, then click a group (or
 // "Move selected to a new group" / "...to hand") to place it there.
 function renderRearrangeView() {
-  $('tableauHint').textContent =
-    '(drafting — nothing is final until you commit; click a card, then click a group to move it there)';
+  const r = game.round;
+  const stillOwed = r.rowObligationCardId && r.pendingObligations.includes(r.rowObligationCardId)
+    ? cardText(r.rearrange.cardById[r.rowObligationCardId])
+    : null;
+  $('tableauHint').textContent = stillOwed
+    ? `(drafting — nothing is final until you commit; click a card, then click a group to move it there — you still owe ${stillOwed} from the row this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
+    : '(drafting — nothing is final until you commit; click a card, then click a group to move it there)';
   const el = $('tableau');
   el.innerHTML = '';
   const state = CascadeEngine.rearrangeState(game);

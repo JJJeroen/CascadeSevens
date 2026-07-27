@@ -425,6 +425,30 @@ two bugs it exposed while fixing it:
   card, seeing the updated obligation label, and discarding it back via an
   actual UI click.
 
+**Fifteenth playtest round (2026-07-27)** — direct follow-up question from
+the user after the discard-back fix above: they'd picked up a row card that
+couldn't be melded onto anything on the table, and wanted to fold it into a
+new grouping via a tableau rearrange session instead — but "Rearrange
+tableau…" was greyed out. Confirmed against the designer: an outstanding
+**row-take** obligation should no longer block starting a session (a
+meld-only joker-swap obligation still does — that wasn't part of what was
+confirmed). Implemented so the obligated card participates in the session
+like any other card: fold it into a valid group and the obligation clears
+at commit exactly like a normal meld would; leave it in the hand pool and
+the obligation simply survives the session, still resolvable afterward via
+a meld or discard-back. The tableau hint text during an active session now
+also names the still-owed card when one is outstanding, so it's clear it
+still needs to land somewhere valid. This is DESIGN.md §2.3/§3 decision 18,
+a direct follow-up to decision 17. Verified with 3 new engine tests
+(`rules_check14.js`) — session allowed with a row obligation but blocked
+with a meld-only one, obligation cleared when folded into a valid group,
+obligation preserved (and still dischargeable afterward) when left
+untouched — plus a full real-browser run: took an unmeldable row card via
+a real click, confirmed the Rearrange button was enabled and the hint
+text was correct, built the resolving group, and committed via a real
+button click, ending with the obligation cleared and the card sitting in
+a new run on the table.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker

@@ -808,7 +808,13 @@ const CascadeEngine = (() => {
       r.part === 2 &&
       !r.ended &&
       r.comeOut[r.current] &&
-      r.pendingObligations.length === 0 &&
+      // A meld-only obligation (a reclaimed joker from a swap) still blocks
+      // starting a session -- but an outstanding row obligation doesn't
+      // (confirmed against the designer 2026-07-27): the row card is
+      // discard-eligible on its own, and can equally be resolved by simply
+      // folding it into a valid group during the session (see
+      // commitRearrange, which clears the obligation if that happens).
+      r.pendingObligations.every((id) => id === r.rowObligationCardId) &&
       !r.rearrange
     );
   }
@@ -937,6 +943,13 @@ const CascadeEngine = (() => {
 
     r.tableau = newTableau;
     r.hands[r.current] = newHandIds.map((id) => rr.cardById[id]);
+    // If an outstanding row obligation's card ended up folded into a valid
+    // group (rather than left in hand), that resolves it the same way an
+    // ordinary meld action would -- every group here has already passed
+    // resolveGroup by this point, so there's nothing further to validate.
+    if (r.rowObligationCardId && !newHandIds.includes(r.rowObligationCardId)) {
+      clearObligations(r, [r.rowObligationCardId]);
+    }
     r.rearrange = null;
     r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} rearranged the tableau.`);

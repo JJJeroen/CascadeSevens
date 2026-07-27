@@ -99,5 +99,63 @@ check('a new row-take supersedes the previous one\'s discard-eligibility, not ju
   if (game.round.pendingObligations.length !== 0) throw new Error('3C should have cleared the obligation');
 });
 
+check('canStartRearrange: allowed with an outstanding row obligation, blocked with a meld-only (joker) obligation', () => {
+  const game = freshGameAtPart1();
+  game.round.openRow = [card('9', 'H')];
+  E.drawFromOpenRow(game, '9H');
+  E.finishDrawing(game);
+  game.round.comeOut[game.round.current] = true;
+  if (!E.canStartRearrange(game)) throw new Error('should be allowed to start with only the row obligation outstanding');
+
+  game.round.rowObligationCardId = null;
+  game.round.pendingObligations = ['SOME_JOKER_ID'];
+  if (E.canStartRearrange(game)) throw new Error('should still be blocked by a meld-only obligation');
+});
+
+check('commitRearrange: folding the row-obligated card into a valid group clears the obligation', () => {
+  const game = freshGameAtPart1();
+  game.round.openRow = [card('9', 'H')];
+  E.drawFromOpenRow(game, '9H');
+  E.finishDrawing(game);
+  game.round.comeOut[game.round.current] = true;
+  game.round.hands[game.round.current].push(card('7', 'H'), card('8', 'H'));
+  E.startRearrange(game);
+  // 9H (obligated), 7H, 8H form a valid run -- move them into one new group.
+  E.rearrangeMoveCard(game, '9H', 'new');
+  const state1 = E.rearrangeState(game);
+  const newGroupId = state1.groups.find((g) => g.cardIds.includes('9H')).groupId;
+  E.rearrangeMoveCard(game, '7H', newGroupId);
+  E.rearrangeMoveCard(game, '8H', newGroupId);
+  const result = E.commitRearrange(game);
+  if (!result.ok) throw new Error('commit should succeed: ' + JSON.stringify(result.problems));
+  if (game.round.pendingObligations.length !== 0) throw new Error('folding 9H into a valid run should clear the obligation');
+  if (game.round.rowObligationCardId !== null) throw new Error('rowObligationCardId should be cleared too');
+});
+
+check('commitRearrange: leaving the row-obligated card in hand leaves the obligation outstanding after commit', () => {
+  const game = freshGameAtPart1();
+  game.round.openRow = [card('9', 'H')];
+  E.drawFromOpenRow(game, '9H');
+  E.finishDrawing(game);
+  game.round.comeOut[game.round.current] = true;
+  game.round.tableau.push({ id: 'm1', type: 'set', slots: [
+    { card: card('5', 'C'), ownerId: game.round.current, wildAs: null },
+    { card: card('5', 'D'), ownerId: game.round.current, wildAs: null },
+    { card: card('5', 'S'), ownerId: game.round.current, wildAs: null },
+  ]});
+  E.startRearrange(game);
+  // A no-op session (commit without moving anything) -- 9H stays in the
+  // hand pool the whole time, never placed into any group.
+  const result = E.commitRearrange(game);
+  if (!result.ok) throw new Error('commit should succeed: ' + JSON.stringify(result.problems));
+  if (game.round.pendingObligations.length !== 1 || game.round.pendingObligations[0] !== '9H') {
+    throw new Error('9H should still be an outstanding obligation since it was never placed in a group');
+  }
+  if (game.round.rowObligationCardId !== '9H') throw new Error('rowObligationCardId should still be 9H');
+  // ...and it should still be resolvable afterward, e.g. by discarding it back.
+  E.discard(game, '9H');
+  if (game.round.pendingObligations.length !== 0) throw new Error('should still be able to discard 9H back after the session');
+});
+
 console.log(failures === 0 ? '\nALL RULE CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);
