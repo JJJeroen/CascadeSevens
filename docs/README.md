@@ -145,6 +145,14 @@ Part 1 → Part 2 transition, and only closes once an actual meld/add/swap/
 pull action succeeds — undoing after `finishDrawing` reverts that
 transition too, back to a clean Part 1.
 
+**Sixth playtest round (2026-07-27)** — minor display bug: adding a card to
+the *low* end of a run (e.g. adding 9♠ to an existing 10♠-J♠-Q♠) always
+appended it to the end of the meld's internal card list, so the tableau
+showed "10♠ J♠ Q♠ 9♠" instead of "9♠ 10♠ J♠ Q♠". Not a legality bug — the
+meld was always valid and scored correctly either way — just a display-order
+mismatch. `addToMeld` now inserts at the front when extending the low end of
+a run, matching visual left-to-right sequence order.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker

@@ -490,6 +490,7 @@ const CascadeEngine = (() => {
     const meld = r.tableau.find((m) => m.id === meldId);
     if (!meld) throw new Error('Meld not found.');
     const card = hand[ci];
+    let insertAtStart = false; // for a run, extending the low end must prepend, not append (display order)
 
     if (meld.type === 'set') {
       const rank = meld.slots.find((s) => s.card.rank !== 'JOKER').card.rank;
@@ -507,10 +508,13 @@ const CascadeEngine = (() => {
       const extendsLow = v === seq.min - 1 && v >= 1;
       const extendsHigh = v === seq.max + 1 && v <= 13;
       if (!extendsLow && !extendsHigh) throw new Error('Card does not extend either end of the run.');
+      insertAtStart = extendsLow;
     }
 
     hand.splice(ci, 1);
-    meld.slots.push({ card, ownerId: r.current, wildAs: card.rank === 'JOKER' ? { rank: wildAs.rank } : null });
+    const newSlot = { card, ownerId: r.current, wildAs: card.rank === 'JOKER' ? { rank: wildAs.rank } : null };
+    if (insertAtStart) meld.slots.unshift(newSlot);
+    else meld.slots.push(newSlot);
     clearObligations(r, [card.id]);
     r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} added ${card.rank}${card.suit || ''} to a ${meld.type}.`);
