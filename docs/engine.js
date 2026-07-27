@@ -34,7 +34,10 @@ const CascadeEngine = (() => {
 
   // --- Game/round setup ---------------------------------------------------
 
-  function newGame(mode = 'standard') {
+  // Who starts round 1 is random; the starter alternates every round after
+  // that (confirmed against the designer 2026-07-27 — this was previously
+  // an unconfirmed assumption defaulting to "player 1 always starts").
+  function newGame(mode = 'standard', rng = Math.random) {
     return {
       mode, // 'standard' (>1000) or 'quick' (>300)
       threshold: mode === 'quick' ? 300 : 1000,
@@ -43,6 +46,7 @@ const CascadeEngine = (() => {
       gameOver: false,
       winner: null,
       round: null,
+      nextRoundStarter: rng() < 0.5 ? 0 : 1,
     };
   }
 
@@ -52,15 +56,17 @@ const CascadeEngine = (() => {
     const rest = deck.slice(14);
     const openRow = [rest.pop()];
     game.roundNumber += 1;
+    const starter = game.nextRoundStarter;
     game.round = {
       closedPile: rest,
       openRow, // index 0 = oldest/bottom, last = newest/top
       hands,
       tableau: [], // [{id, type:'set'|'run', slots:[{card, ownerId, wildAs}]}]
       comeOut: [false, false],
-      current: 0, // player index whose turn it is
+      starter, // which player index starts this round's Turn 0 + (normally) Turn 1
+      current: starter, // player index whose turn it is
       part: 'turn0', // 'turn0' | 1 | 2 | 3
-      turn0: { stage: 'p1first', resolved: false }, // stage: p1first -> p2second -> p1followup -> resolved
+      turn0: { stage: 'starterFirst', resolved: false, lastAcceptor: null },
       pendingObligations: [], // card ids that must appear in a meld action before Part 3
       lastDraw: null, // { source: 'row', takenCards, priorObligations } — undoable until any other Part 2 action happens
       rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
@@ -72,7 +78,8 @@ const CascadeEngine = (() => {
       endReason: null, // 'handout' | 'pile-empty'
       roundWinner: null,
     };
-    logMsg(game, `Round ${game.roundNumber} dealt. Mode: ${game.mode}.`);
+    game.nextRoundStarter = other(starter); // alternates for whichever round comes after this one
+    logMsg(game, `Round ${game.roundNumber} dealt. Mode: ${game.mode}. Player ${starter + 1} starts.`);
     return game;
   }
 
@@ -101,25 +108,25 @@ const CascadeEngine = (() => {
     const r = game.round;
     if (r.part !== 'turn0' || r.turn0.resolved) return null;
     const stage = r.turn0.stage;
-    if (stage === 'p1first' || stage === 'p1followup') return 0;
-    if (stage === 'p2second') return 1;
+    if (stage === 'starterFirst' || stage === 'starterFollowup') return r.starter;
+    if (stage === 'otherSecond') return other(r.starter);
     return null;
   }
 
   function turn0Decline(game) {
     const t = game.round.turn0;
     if (t.resolved) throw new Error('Turn 0 already resolved.');
-    if (t.stage === 'p1first') {
-      t.stage = 'p2second';
+    if (t.stage === 'starterFirst') {
+      t.stage = 'otherSecond';
       return;
     }
-    if (t.stage === 'p2second') {
+    if (t.stage === 'otherSecond') {
       t.resolved = true;
       logMsg(game, 'Both players declined the Turn 0 exchange.');
       beginNormalRotation(game);
       return;
     }
-    // t.stage === 'p1followup': P1 declined the consolation look.
+    // t.stage === 'starterFollowup': the starter declined the consolation look.
     t.resolved = true;
     logMsg(game, 'Turn 0 exchange ends after one swap.');
     beginNormalRotation(game);
@@ -137,25 +144,32 @@ const CascadeEngine = (() => {
     if (ci === -1) throw new Error('Replacement card not in hand.');
     const [placed] = hand.splice(ci, 1);
     r.openRow.push(placed);
+    t.lastAcceptor = takerIdx;
     logMsg(game, `Player ${takerIdx + 1} took the starter card and swapped in ${placed.rank}${placed.suit || ''}.`);
 
-    if (t.stage === 'p1first') {
-      t.resolved = true; // P1 taking it immediately ends Turn 0 — no follow-up for P2.
+    if (t.stage === 'starterFirst') {
+      t.resolved = true; // starter taking it immediately ends Turn 0 — no follow-up for the other player.
       beginNormalRotation(game);
-    } else if (t.stage === 'p2second') {
-      t.stage = 'p1followup'; // P1 passed on it, so P1 gets one consolation look now.
+    } else if (t.stage === 'otherSecond') {
+      t.stage = 'starterFollowup'; // the starter passed on it, so they get one consolation look now.
     } else {
-      // t.stage === 'p1followup'
+      // t.stage === 'starterFollowup'
       t.resolved = true;
       beginNormalRotation(game);
     }
   }
 
+  // Confirmed against the designer (2026-07-27): taking the starter card
+  // and swapping "uses up" that player's go, the same way a normal turn
+  // would — so whoever made the LAST accepted swap in Turn 0 hands Turn 1
+  // to their opponent, not to themselves. If nobody ever accepted anything
+  // (both declined), nothing was "used" and the original starter begins
+  // Turn 1 as normal.
   function beginNormalRotation(game) {
     const r = game.round;
     r.part = 1;
-    r.current = 0;
-    logMsg(game, `Turn 0 resolved. Player 1's turn begins.`);
+    r.current = r.turn0.lastAcceptor !== null ? other(r.turn0.lastAcceptor) : r.starter;
+    logMsg(game, `Turn 0 resolved. Player ${r.current + 1}'s turn begins.`);
   }
 
   // --- Part 1: draw ---------------------------------------------------------

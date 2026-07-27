@@ -240,6 +240,28 @@ feature:
   in, and a pre-existing card that isn't yours can't simply be left in
   hand — it has to end up in some valid group.
 
+**Tenth playtest round (2026-07-27)** — two fixes about who acts when,
+both after a live-play report that one player was always going first:
+- **Round starter is now chance-based, then alternates** (DESIGN.md
+  §2.2/§3 decision 14). Round 1 of a new game picks its starter at random;
+  every round after that alternates from the previous round's starter,
+  regardless of who won it. Previously `newGame`/`startRound` had no
+  starter logic at all and implicitly always began with player 1 — an
+  unconfirmed assumption, not a deliberate design choice.
+- **Taking the Turn 0 starter card and swapping now correctly ends that
+  player's go** (DESIGN.md §2.6/§3 decision 15). Previously, after Turn 0
+  resolved, Turn 1 always went back to whoever started the round —
+  including when that same player had just taken the starter card and
+  swapped in Turn 0, which meant they could effectively "double turn" for
+  free. Now Turn 1 goes to the **opponent of whoever made the last
+  accepted swap** in Turn 0; only if nobody accepted anything does the
+  original starter still begin Turn 1. Verified via 3 new targeted unit
+  tests covering all 4 Turn-0 resolution paths, plus a real-browser CDP
+  click test confirming: (a) `newGame()` produces both starters across
+  repeated trials, not just one, and (b) taking the Turn 0 card and
+  swapping via an actual UI click hands the very next turn to the AI, not
+  back to the human.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker
