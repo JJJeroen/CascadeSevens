@@ -262,6 +262,33 @@ both after a live-play report that one player was always going first:
   swapping via an actual UI click hands the very next turn to the AI, not
   back to the human.
 
+**Eleventh playtest round (2026-07-27)** — two testing/visibility requests,
+plus a real bug caught along the way:
+- **Four-color deck.** Suits now use four distinct colors instead of the
+  standard red/black — spades black, clubs green, hearts red, diamonds
+  blue — so spades vs. clubs (previously both plain black) are easy to
+  tell apart at a glance. `suitClass()` in app.js and the `.card.suit-*`
+  rules in style.css.
+- **AI hand debug view.** A new panel above the table always shows the
+  AI's actual 7 cards face-up (`renderAiHand()`, `#aiHand`), clearly
+  marked as a testing aid — the real game would never reveal an
+  opponent's hand. Dashed border to visually set it apart from the real
+  interactive UI.
+- **Real bug found while screenshotting the above**: the tableau
+  rearrange session's control buttons (Move to new group / Move to hand /
+  Commit / Cancel) were visible and clickable *even when no rearrange
+  session was active* — the exact same bug class as the `#modalRoot`
+  incident from playtest round one. Root cause: `.controls { display:
+  flex }` beats the browser's default `[hidden] { display: none }`
+  regardless of specificity (author styles always win over the user-agent
+  stylesheet), and `#rearrangeControls` (which has class `controls`) never
+  got a matching `.controls[hidden]` override the way `.banner[hidden]`
+  and `.modal-root[hidden]` already had. Fixed by adding
+  `.controls[hidden] { display: none; }`. Worth remembering for any future
+  element: giving a class `display: flex/grid/etc.` silently breaks
+  `hidden` on every element with that class unless a `[hidden]` override
+  is added alongside it.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker

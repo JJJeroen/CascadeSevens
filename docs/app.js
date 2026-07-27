@@ -17,7 +17,10 @@ function showError(msg) {
 
 function suitClass(card) {
   if (card.rank === 'JOKER') return 'joker';
-  return card.suit === 'H' || card.suit === 'D' ? 'red' : '';
+  // Four-color deck (spades black, clubs green, hearts red, diamonds
+  // blue) instead of the standard two-color deck -- requested to make
+  // suits easier to tell apart at a glance during testing.
+  return { S: 'suit-s', C: 'suit-c', H: 'suit-h', D: 'suit-d' }[card.suit];
 }
 
 function cardText(card) {
@@ -121,8 +124,21 @@ function render() {
     renderTableau();
   }
   renderHand();
+  renderAiHand();
   renderControls();
   renderLog();
+}
+
+// Debug-only: shows the AI's actual hand face-up for testing. The real
+// game would never reveal an opponent's hand -- this exists purely so
+// the designer can see what the AI was holding when reviewing its plays.
+function renderAiHand() {
+  const el = $('aiHand');
+  el.innerHTML = '';
+  if (!game.round || game.round.rearrange) return;
+  game.round.hands[1].forEach((card) => {
+    el.appendChild(buildCardEl(card));
+  });
 }
 
 function renderBanner() {

@@ -5,6 +5,8 @@
   --card-border: #1a1a1a;
   --red: #c0392b;
   --black: #1a1a1a;
+  --green: #1f7a3d;
+  --blue: #1f5fa8;
   --accent: #e8c14c;
   --text: #f7f5ed;
   --muted: #d3e3d9;
@@ -81,12 +83,20 @@ select {
   flex-wrap: wrap;
 }
 
-.table, .hand-area, .log-panel {
+.table, .hand-area, .log-panel, .ai-hand-area {
   margin: 1rem 1.25rem;
   background: var(--bg-panel);
   border-radius: 10px;
   padding: 0.75rem 1rem 1.25rem;
 }
+
+/* Debug-only AI hand: dashed border + no pointer cursor on cards (there's
+   nothing to click here) to visually mark it as a testing aid, distinct
+   from the real, interactive controls around it. */
+.ai-hand-area {
+  border: 1px dashed var(--accent);
+}
+.ai-hand-area .hand .card { cursor: default; }
 
 h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
 .hint { font-weight: normal; font-size: 0.75rem; }
@@ -134,7 +144,13 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   box-shadow: 1px 1px 3px rgba(0,0,0,0.4);
   user-select: none;
 }
-.card.red { color: var(--red); }
+/* Four-color deck: spades black (default), clubs green, hearts red,
+   diamonds blue -- easier to tell apart at a glance than the standard
+   two-color deck, especially spades vs. clubs. */
+.card.suit-s { color: var(--black); }
+.card.suit-c { color: var(--green); }
+.card.suit-h { color: var(--red); }
+.card.suit-d { color: var(--blue); }
 .card.joker { background: #e9dfc4; }
 .card .rank { font-size: 0.85em; line-height: 1.1; }
 .card .suit { font-size: 1.5em; line-height: 1; }
@@ -164,6 +180,11 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
 .hand .card.selected { transform: translateY(-12px); box-shadow: 0 0 0 3px var(--accent); }
 
 .controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+/* Same class of bug as the earlier #modalRoot incident: an author rule
+   setting display:flex beats the browser's default [hidden]{display:none}
+   regardless of specificity, so any hidden element with class "controls"
+   (e.g. #rearrangeControls) stayed visible and clickable. */
+.controls[hidden] { display: none; }
 
 .log-panel #log {
   max-height: 160px;
