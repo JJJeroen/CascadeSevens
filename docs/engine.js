@@ -474,9 +474,9 @@ const CascadeEngine = (() => {
     if (r.part !== 2) throw new Error('Not in Part 2.');
     if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     const hand = r.hands[r.current];
-    if (cardSelections.length === hand.length) {
-      throw new Error('Cannot use your entire hand in a meld — you must keep at least one card to discard.');
-    }
+    const selectedIds = cardSelections.map((s) => s.cardId);
+    const obligationsAfter = r.pendingObligations.filter((id) => !selectedIds.includes(id)).length;
+    assertLeavesHandUsable(hand, cardSelections.length, obligationsAfter);
     const result = validateNewMeldSelection(hand, cardSelections);
     if (!result.ok) throw new Error(result.error);
 
@@ -513,20 +513,43 @@ const CascadeEngine = (() => {
     r.pendingObligations = r.pendingObligations.filter((id) => !cardIds.includes(id));
   }
 
+  // Guards the interaction between two rules that can otherwise collide:
+  // melding your entire hand is illegal outright (§3 decision 8), but a
+  // "must meld this card" obligation (row-take or joker swap-out) demands
+  // exactly that card be melded that same turn. If an action is allowed to
+  // shrink the hand down to (or below) the number of cards still owed,
+  // those obligations become permanently unmeldable -- every remaining
+  // meld action requires keeping at least one card behind, so a hand that
+  // equals its own obligation list can never legally clear it, and discard
+  // refuses to run with obligations outstanding. Checked, pre-mutation,
+  // by every action that can shrink the hand or add a new obligation
+  // (layNewMeld, addToMeld, swapJoker) using the hand size and obligation
+  // count *after* the action would apply.
+  function assertLeavesHandUsable(hand, cardsBeingRemovedCount, obligationsAfterCount) {
+    const remaining = hand.length - cardsBeingRemovedCount;
+    if (obligationsAfterCount > 0 && remaining <= obligationsAfterCount) {
+      throw new Error(
+        `This would leave you unable to still meld the ${obligationsAfterCount} card(s) you owe this turn without emptying your hand — resolve an outstanding obligation first, or choose an action that doesn't shrink your hand this far.`
+      );
+    }
+    if (obligationsAfterCount === 0 && remaining <= 0) {
+      throw new Error('Cannot use your entire hand — you must keep at least one card to discard.');
+    }
+  }
+
   function addToMeld(game, meldId, cardId, wildAs) {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
     if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     if (!r.comeOut[r.current]) throw new Error('Must come out before adding to any meld.');
     const hand = r.hands[r.current];
-    if (hand.length <= 1) {
-      throw new Error('Cannot add your last card in hand to a meld — you must keep at least one card to discard.');
-    }
     const ci = findCard(hand, cardId);
     if (ci === -1) throw new Error('Card not in hand.');
     const meld = r.tableau.find((m) => m.id === meldId);
     if (!meld) throw new Error('Meld not found.');
     const card = hand[ci];
+    const obligationsAfter = r.pendingObligations.filter((id) => id !== card.id).length;
+    assertLeavesHandUsable(hand, 1, obligationsAfter);
 
     if (meld.type === 'set') {
       const rank = meld.slots.find((s) => s.card.rank !== 'JOKER').card.rank;
@@ -647,6 +670,13 @@ const CascadeEngine = (() => {
     const ci = findCard(hand, replacementCardId);
     if (ci === -1) throw new Error('Replacement card not in hand.');
     const replacement = hand[ci];
+    // Net hand size is unchanged by a swap (replacement out, joker back
+    // in), but the joker becomes a new obligation -- so check against the
+    // hand as it stands now (0 cards "removed") but with that obligation
+    // added, alongside whatever obligations survive (the replacement card
+    // itself might have been one, and is resolved by this same action).
+    const obligationsAfter = r.pendingObligations.filter((id) => id !== replacementCardId).length + 1;
+    assertLeavesHandUsable(hand, 0, obligationsAfter);
     if (meld.type === 'set') {
       if (replacement.rank !== slot.wildAs.rank) {
         throw new Error(

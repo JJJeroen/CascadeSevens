@@ -20,6 +20,25 @@ python3 -m http.server 8000
 
 Then open `http://localhost:8000/`.
 
+## Running the tests
+
+The engine (`engine.js`) and AI (`ai.js`) have a committed regression suite
+in `../tests/` — plain Node scripts, no dependencies or build step. Run the
+whole thing from the repo root:
+
+```
+node tests/run-all.js
+```
+
+This runs all `rules_check*.js` targeted unit tests (one file per feature
+area — Turn 0, joker repositioning, rearrange sessions, ownership, etc.)
+plus two headless AI-vs-AI simulations (`sim2.js`: 300 games, `sim_stress.js`:
+1000 games) that check for turn stalls and card-conservation violations.
+Exits non-zero if anything fails. Run it after any change to `engine.js` or
+`ai.js` — this is the actual regression net referenced throughout the
+playtest-round entries below, not just a description of testing that
+happened once in a chat session.
+
 ## What's implemented
 
 Full ruleset from DESIGN.md as of the 2026-07-26 revision: deck/deal, the
@@ -288,6 +307,54 @@ plus a real bug caught along the way:
   element: giving a class `display: flex/grid/etc.` silently breaks
   `hidden` on every element with that class unless a `[hidden]` override
   is added alongside it.
+
+**Twelfth playtest round (2026-07-27)** — three fixes from an independent
+brutalcritic adversarial review (not live play), all confirmed by directly
+reading and testing the actual code rather than trusting this file's own
+"resolved" claims:
+- **Real bug, highest severity found so far: a genuine soft-lock.**
+  `swapJoker` had no hand-length guard, unlike its sibling actions. If a
+  player swapped a joker out while holding only the replacement card, the
+  joker returned to hand as a new "must meld this turn" obligation, but by
+  then it was the *only* card left — and melding your last card is illegal
+  outright (§3 decision 8), while discarding is blocked while any
+  obligation is outstanding. Every button ended up disabled at once, with
+  no persistence, so it was a full game loss with no recovery but a reload.
+  A second, more general path to the same trap existed too: any Part 2
+  action (`addToMeld`, `layNewMeld`) that shrank the hand while an
+  *unrelated* obligation sat untouched could strand that obligation the
+  same way. Fixed with one shared invariant, `assertLeavesHandUsable()`,
+  checked before mutating state in `swapJoker`, `addToMeld`, and
+  `layNewMeld`: none of them may leave the hand at or below the number of
+  cards still owed to an outstanding obligation. This is now DESIGN.md §3
+  decision 16. Verified with 5 new targeted tests in `rules_check13.js`
+  (2 reproduction cases + 2 "legal use still works" controls + 1 for the
+  `layNewMeld` path), plus the full simulation suite re-run clean.
+- **The Node test suite is now actually part of the repo.** All 13
+  `rules_check*.js` files and the two simulations (`sim2.js`,
+  `sim_stress.js`) previously only existed as scratch files in a temp
+  directory outside git — the review correctly pointed out that the only
+  evidence for the correctness of the newest, most-revised features (Turn
+  0, repeated row-takes, tableau pull, the rearrange session) was
+  unreviewable and one `rm -rf` away from not existing. They're now
+  committed under `../tests/`, with a `tests/run-all.js` runner (`node
+  tests/run-all.js`) that executes all of them and exits non-zero on any
+  failure. The one-off CDP browser-click debug scripts used throughout
+  this project's history were deliberately *not* committed — most are
+  disposable single-use probes (`cdp_debug1.js`, `cdp_unstick.js`, several
+  numbered retries of the same check) rather than a maintained suite;
+  real-browser verification remains a manual step for now.
+- **The `[hidden]`/`display:flex` bug class is now fixed structurally**,
+  not just patched at the two sites it was caught (`#modalRoot`,
+  `#rearrangeControls`). A single `[hidden] { display: none !important; }`
+  rule near the top of `style.css` guarantees `hidden` actually hides
+  *any* element, current or future, regardless of what other rules give it
+  a `display` value — replacing the two now-redundant per-selector
+  overrides (`.banner[hidden]`, `.modal-root[hidden]`, `.controls[hidden]`,
+  all removed). This closes the bug class for good instead of relying on
+  remembering to add a matching override every time a new dynamically
+  shown/hidden element is introduced — the mechanism that let it recur
+  once already.
 
 ## Known simplifications (mock, not final spec)
 

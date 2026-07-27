@@ -14,6 +14,16 @@
 
 * { box-sizing: border-box; }
 
+/* Structural fix for a bug class hit twice already (#modalRoot, then
+   #rearrangeControls): any author rule setting `display` on an element
+   beats the browser's default `[hidden]{display:none}` regardless of
+   specificity, because author stylesheets always outrank the user-agent
+   stylesheet. A single !important rule here guarantees `hidden` actually
+   means hidden for every element, current or future, instead of relying
+   on remembering a matching `.some-class[hidden]` override each time a
+   new dynamically-shown/hidden element reuses a `display`-setting class. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -68,9 +78,6 @@ select {
 .score-box { font-weight: 600; }
 .score-box span { color: var(--accent); font-size: 1.1rem; margin-left: 0.3rem; }
 
-.banner[hidden] {
-  display: none;
-}
 .banner {
   margin: 0.5rem 1.25rem;
   padding: 0.75rem 1rem;
@@ -180,11 +187,6 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
 .hand .card.selected { transform: translateY(-12px); box-shadow: 0 0 0 3px var(--accent); }
 
 .controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
-/* Same class of bug as the earlier #modalRoot incident: an author rule
-   setting display:flex beats the browser's default [hidden]{display:none}
-   regardless of specificity, so any hidden element with class "controls"
-   (e.g. #rearrangeControls) stayed visible and clickable. */
-.controls[hidden] { display: none; }
 
 .log-panel #log {
   max-height: 160px;
@@ -196,9 +198,6 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
 }
 .log-panel #log div { padding: 0.15rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 
-.modal-root[hidden] {
-  display: none;
-}
 .modal-root {
   position: fixed;
   inset: 0;
