@@ -227,15 +227,18 @@ const CascadeEngine = (() => {
     const r = game.round;
     if (!canFinishDrawing(game)) throw new Error('Nothing to finish — draw first.');
     r.part = 2;
-    r.lastDraw = null;
+    // lastDraw deliberately survives this transition — see canUndoDraw.
   }
 
   // Taking from the open row is voluntary in principle (§2.5) — a player
   // shouldn't take a card they can't meld — but nothing stops a human from
   // doing it anyway and then discovering they're stuck. This is the escape
-  // hatch: undo the most recent row-take, provided nothing else has
-  // happened since (another row-take, any Part 2 action, or finishDrawing
-  // all close the window by clearing lastDraw).
+  // hatch: undo the most recent row-take, provided no *meld* action has
+  // happened since (another row-take, or any Part 2 meld/add/swap/pull all
+  // close the window by clearing lastDraw). Moving from Part 1 into Part 2
+  // via finishDrawing does NOT close it on its own — that would strand a
+  // player who clicks "Done drawing" before realizing they're stuck, which
+  // is exactly the scenario this escape hatch exists for.
   function canUndoDraw(game) {
     const r = game.round;
     return !!r.lastDraw && r.lastDraw.source === 'row';
@@ -255,6 +258,7 @@ const CascadeEngine = (() => {
     r.openRow.push(...takenCards);
     r.pendingObligations = priorObligations;
     r.rowDrawsThisPart1 -= 1;
+    r.part = 1; // reverts finishDrawing too, if it had already happened
     r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} undid taking from the open row.`);
   }

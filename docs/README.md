@@ -133,6 +133,18 @@ fixed here.
   sits next to "Selected: …"; and "Clear selection" (now "Clear selection &
   target") resets both at once instead of leaving stale state behind.
 
+**Fifth playtest round (2026-07-27)** — a real bug in the "Undo pickup"
+escape hatch itself: `finishDrawing()` (the "Done drawing → Part 2" button)
+was clearing `lastDraw`, which silently closed the undo window the moment a
+player moved into Part 2 — even though nothing else had actually happened
+yet. Someone who takes an unmeldable card, ignores the pre-take warning,
+then clicks "Done drawing" before realizing they're stuck (exactly what
+happened in testing) would find "Undo pickup" already disabled, with no way
+back and no legal move forward. Fixed: the undo window now survives the
+Part 1 → Part 2 transition, and only closes once an actual meld/add/swap/
+pull action succeeds — undoing after `finishDrawing` reverts that
+transition too, back to a clean Part 1.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker
