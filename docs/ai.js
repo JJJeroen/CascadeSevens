@@ -86,7 +86,14 @@ const CascadeAI = (() => {
     const jokersLeft = hypotheticalHand.filter((c) => c.rank === 'JOKER');
     const sets = findCandidateSets(hypotheticalHand, jokersLeft);
     const runs = findCandidateRuns(hypotheticalHand, jokersLeft);
-    return [...sets, ...runs].some((cand) => cand.slots.some((s) => s.cardId === cardId));
+    // Must also leave at least one card in hand afterward (layNewMeld
+    // rejects using the whole hand) — a candidate meld that happens to BE
+    // the entire post-pickup hand doesn't actually resolve the obligation,
+    // and can strand a player with no legal move and (if it's the AI, which
+    // never uses "Undo pickup") no way back either.
+    return [...sets, ...runs].some(
+      (cand) => cand.slots.length < hypotheticalHand.length && cand.slots.some((s) => s.cardId === cardId)
+    );
   }
 
   function pickDraw(game) {
@@ -122,7 +129,16 @@ const CascadeAI = (() => {
         const placed =
           (E_.hasComeOut(game) && tryPlaceSingleCard(game, card)) ||
           tryLayMeldContaining(game, cardId, hand, jokersLeft);
-        if (!placed) break; // shouldn't happen — pickDraw only takes resolvable pickups
+        if (!placed) {
+          // Genuinely stuck — shouldn't happen given canResolvePickup/
+          // canReplayJokerAfterSwap, but those are heuristic candidate
+          // searches, not exhaustive proofs. Fall back to undoing the
+          // pickup that created this obligation (if that's what it was)
+          // rather than stranding the AI permanently; takeTurn will get
+          // another chance to draw differently next time it's called.
+          if (E_.canUndoDraw(game)) E_.undoDraw(game);
+          break;
+        }
         continue;
       }
 
@@ -173,7 +189,55 @@ const CascadeAI = (() => {
     }
   }
 
+  // Prefer reclaiming a joker over just padding a meld with a real card:
+  // if some tableau meld has a joker standing in for exactly this card
+  // (rank for a set; rank+suit for a run), swap it out instead of adding
+  // alongside it. Reclaims a 50-point wildcard for redeployment rather than
+  // leaving it sitting there doing nothing extra. The swap's "replay the
+  // joker this turn" obligation is picked up automatically next loop
+  // iteration by playPart2's existing obligation-first handling.
+  function trySwapJoker(game, card) {
+    const E_ = E();
+    const r = game.round;
+    for (const meld of r.tableau) {
+      const jokerSlot = meld.slots.find((s) => s.card.rank === 'JOKER');
+      if (!jokerSlot || !jokerSlot.wildAs || jokerSlot.wildAs.rank !== card.rank) continue;
+      if (meld.type === 'run' && card.suit !== E_.meldSuit(meld)) continue;
+      // Only swap if the joker can actually be replayed afterward — §2.3
+      // requires it be played back into a meld that same turn, and this
+      // AI's only real mechanism for placing a bare joker is folding it
+      // into a brand-new meld (tryPlaceSingleCard's addToMeld heuristic
+      // can't construct a wildAs for it). Without this check the AI could
+      // strand itself with an unfulfillable replay obligation, the same
+      // failure mode canResolvePickup already guards against for row
+      // pickups. If it's not replayable, just adding the real card below
+      // is still a fine, always-safe move.
+      if (!canReplayJokerAfterSwap(r, jokerSlot.card, card)) continue;
+      try {
+        E_.swapJoker(game, meld.id, jokerSlot.card.id, card.id);
+        return true;
+      } catch (e) { /* try next meld */ }
+    }
+    return false;
+  }
+
+  function canReplayJokerAfterSwap(round, jokerCard, usedRealCard) {
+    const hypotheticalHand = round.hands[round.current]
+      .filter((c) => c.id !== usedRealCard.id)
+      .concat([jokerCard]);
+    const jokersLeft = hypotheticalHand.filter((c) => c.rank === 'JOKER');
+    const sets = findCandidateSets(hypotheticalHand, jokersLeft);
+    const runs = findCandidateRuns(hypotheticalHand, jokersLeft);
+    // Must also leave at least one card in hand afterward (layNewMeld
+    // rejects using the whole hand) — a candidate that happens to BE the
+    // entire hypothetical hand doesn't actually resolve the obligation.
+    return [...sets, ...runs].some(
+      (cand) => cand.slots.length < hypotheticalHand.length && cand.slots.some((s) => s.cardId === jokerCard.id)
+    );
+  }
+
   function tryPlaceSingleCard(game, card) {
+    if (trySwapJoker(game, card)) return true;
     const E_ = E();
     const r = game.round;
     for (const meld of r.tableau) {

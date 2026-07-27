@@ -289,6 +289,54 @@ const CascadeEngine = (() => {
   // always just takes the group's shared rank); runs do, since a joker can
   // fill any internal gap or extend either end — solved directly rather
   // than brute-forcing every permutation.
+  // Given a fixed set of real cards (must all share a suit) and a set of
+  // jokers (flexible — their represented rank is solved for, not given),
+  // determines whether ANY valid run can be formed and, if so, returns it
+  // fully ordered (tryAsRun/addToMeld's sequence checks are order-
+  // dependent, so this always returns cards left-to-right by value).
+  // Shared by autoResolveMeld (laying a brand-new meld from a hand
+  // selection) and addToMeld's joker-reposition fallback (§2.3, added
+  // 2026-07-27 — e.g. a run of JOKER(as 9),10,J can become
+  // 10,J,QUEEN(joker),K when a K arrives, by reassigning what the joker
+  // stands for rather than rejecting the K outright).
+  function solveRun(reals, jokers) {
+    if (reals.length === 0) return { ok: false };
+    if (!reals.every((c) => c.suit === reals[0].suit)) return { ok: false };
+    const suit = reals[0].suit;
+    for (const aceHigh of [false, true]) {
+      const values = reals.map((c) => orderedRankValue(c.rank, aceHigh));
+      if (new Set(values).size !== values.length) continue; // can't happen with a real deck, but be safe
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const spanReals = max - min + 1;
+      const internalGaps = spanReals - reals.length;
+      const totalSize = reals.length + jokers.length;
+      if (internalGaps > jokers.length || totalSize > 13) continue;
+
+      // Fill internal gaps first, then extend outward with whatever's left.
+      const filled = new Set(values);
+      let spare = jokers.length - internalGaps;
+      for (let v = min; v <= max; v++) filled.add(v);
+      let lo = min, hi = max;
+      while (spare > 0) {
+        if (lo > 1) { lo -= 1; filled.add(lo); spare -= 1; }
+        else if (hi < 13) { hi += 1; filled.add(hi); spare -= 1; }
+        else break;
+      }
+      if (spare > 0) continue; // ran out of room (shouldn't happen given the totalSize<=13 check)
+
+      const jokerValues = [...filled].filter((v) => !values.includes(v)).sort((a, b) => a - b);
+      const unordered = [
+        ...reals.map((c) => ({ cardId: c.id, value: orderedRankValue(c.rank, aceHigh) })),
+        ...jokers.map((c, i) => ({ cardId: c.id, wildAs: { rank: rankNameForValue(jokerValues[i], aceHigh) }, value: jokerValues[i] })),
+      ];
+      unordered.sort((a, b) => a.value - b.value);
+      const slots = unordered.map(({ cardId, wildAs }) => (wildAs ? { cardId, wildAs } : { cardId }));
+      return { ok: true, type: 'run', suit, slots };
+    }
+    return { ok: false };
+  }
+
   function autoResolveMeld(hand, cardIds) {
     if (cardIds.length < 3) return { ok: false, error: 'A meld needs at least 3 cards.' };
     const cards = cardIds.map((id) => hand.find((h) => h.id === id));
@@ -308,44 +356,8 @@ const CascadeEngine = (() => {
     }
 
     // Try as a run: every real card must share one suit.
-    if (reals.every((c) => c.suit === reals[0].suit)) {
-      const suit = reals[0].suit;
-      for (const aceHigh of [false, true]) {
-        const values = reals.map((c) => orderedRankValue(c.rank, aceHigh));
-        if (new Set(values).size !== values.length) continue; // can't happen with a real deck, but be safe
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const spanReals = max - min + 1;
-        const internalGaps = spanReals - reals.length;
-        const totalSize = reals.length + jokers.length;
-        if (internalGaps > jokers.length || totalSize > 13) continue;
-
-        // Fill internal gaps first, then extend outward with whatever's left.
-        const filled = new Set(values);
-        let spare = jokers.length - internalGaps;
-        for (let v = min; v <= max; v++) filled.add(v);
-        let lo = min, hi = max;
-        while (spare > 0) {
-          if (lo > 1) { lo -= 1; filled.add(lo); spare -= 1; }
-          else if (hi < 13) { hi += 1; filled.add(hi); spare -= 1; }
-          else break;
-        }
-        if (spare > 0) continue; // ran out of room (shouldn't happen given the totalSize<=13 check)
-
-        const jokerValues = [...filled].filter((v) => !values.includes(v)).sort((a, b) => a - b);
-        // tryAsRun's sequence check is order-dependent (array order = the
-        // run's left-to-right sequence) — reals-then-jokers concatenation
-        // order is essentially never already sorted, so this must be
-        // explicitly ordered by resolved value before returning.
-        const unordered = [
-          ...reals.map((c) => ({ cardId: c.id, value: orderedRankValue(c.rank, aceHigh) })),
-          ...jokers.map((c, i) => ({ cardId: c.id, wildAs: { rank: rankNameForValue(jokerValues[i], aceHigh) }, value: jokerValues[i] })),
-        ];
-        unordered.sort((a, b) => a.value - b.value);
-        const slots = unordered.map(({ cardId, wildAs }) => (wildAs ? { cardId, wildAs } : { cardId }));
-        return { ok: true, type: 'run', slots };
-      }
-    }
+    const runResult = solveRun(reals, jokers);
+    if (runResult.ok) return runResult;
 
     return { ok: false, error: 'No valid set or run is possible with the selected cards.' };
   }
@@ -490,12 +502,13 @@ const CascadeEngine = (() => {
     const meld = r.tableau.find((m) => m.id === meldId);
     if (!meld) throw new Error('Meld not found.');
     const card = hand[ci];
-    let insertAtStart = false; // for a run, extending the low end must prepend, not append (display order)
 
     if (meld.type === 'set') {
       const rank = meld.slots.find((s) => s.card.rank !== 'JOKER').card.rank;
       const cardRank = card.rank === 'JOKER' ? (wildAs && wildAs.rank) : card.rank;
       if (cardRank !== rank) throw new Error('Card does not match the set rank.');
+      hand.splice(ci, 1);
+      meld.slots.push({ card, ownerId: r.current, wildAs: card.rank === 'JOKER' ? { rank: wildAs.rank } : null });
     } else {
       // A joker's suit in a run is always the run's own suit (implied, not
       // something the caller needs to supply) — only rank is meaningful.
@@ -507,14 +520,43 @@ const CascadeEngine = (() => {
       const v = orderedRankValue(cardRank, seq.aceHigh);
       const extendsLow = v === seq.min - 1 && v >= 1;
       const extendsHigh = v === seq.max + 1 && v <= 13;
-      if (!extendsLow && !extendsHigh) throw new Error('Card does not extend either end of the run.');
-      insertAtStart = extendsLow;
+
+      if (extendsLow || extendsHigh) {
+        hand.splice(ci, 1);
+        const newSlot = { card, ownerId: r.current, wildAs: card.rank === 'JOKER' ? { rank: wildAs.rank } : null };
+        if (extendsLow) meld.slots.unshift(newSlot);
+        else meld.slots.push(newSlot);
+      } else {
+        // Doesn't directly extend either end — but a joker already sitting
+        // in the run might be repositionable to make room instead of
+        // rejecting the card outright (§2.3, added 2026-07-27): e.g. a run
+        // of JOKER(as 9),10,J can become 10,J,QUEEN(joker),K when a K
+        // arrives, by reassigning what the joker stands for.
+        if (card.rank === 'JOKER') throw new Error('Card does not extend either end of the run.');
+        const existingReals = meld.slots.filter((s) => s.card.rank !== 'JOKER').map((s) => s.card);
+        const existingJokers = meld.slots.filter((s) => s.card.rank === 'JOKER').map((s) => s.card);
+        const resolved = solveRun([...existingReals, card], existingJokers);
+        if (!resolved.ok) {
+          throw new Error('Card does not extend either end of the run, even allowing a joker to be repositioned.');
+        }
+        const ownerById = {};
+        const cardById = {};
+        for (const s of meld.slots) { ownerById[s.card.id] = s.ownerId; cardById[s.card.id] = s.card; }
+        cardById[card.id] = card;
+        hand.splice(ci, 1);
+        // Ownership follows the act of placement (§2.8): the new card is
+        // now owned by whoever added it; every other card — real or joker
+        // — was already sitting in this meld and isn't being newly placed
+        // by this action, so it keeps its existing owner even though its
+        // position (or, for a joker, its represented rank) may have moved.
+        meld.slots = resolved.slots.map((s) => ({
+          card: cardById[s.cardId],
+          ownerId: s.cardId === card.id ? r.current : ownerById[s.cardId],
+          wildAs: s.wildAs || null,
+        }));
+      }
     }
 
-    hand.splice(ci, 1);
-    const newSlot = { card, ownerId: r.current, wildAs: card.rank === 'JOKER' ? { rank: wildAs.rank } : null };
-    if (insertAtStart) meld.slots.unshift(newSlot);
-    else meld.slots.push(newSlot);
     clearObligations(r, [card.id]);
     r.lastDraw = null;
     logMsg(game, `Player ${r.current + 1} added ${card.rank}${card.suit || ''} to a ${meld.type}.`);

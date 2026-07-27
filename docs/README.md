@@ -153,15 +153,46 @@ meld was always valid and scored correctly either way — just a display-order
 mismatch. `addToMeld` now inserts at the front when extending the low end of
 a run, matching visual left-to-right sequence order.
 
+**Seventh playtest round (2026-07-27)** — two related additions after a
+"why didn't the AI swap the joker?" question:
+- **The AI now considers joker swaps**, not just adding alongside them: if
+  it can add a real card to a meld AND that meld has a joker it could
+  instead swap out for the same rank/suit, it now prefers the swap (freeing
+  up a 50-point wildcard to redeploy). This surfaced a real self-inflicted
+  stall risk during testing — the AI could swap out a joker, then be unable
+  to replay it (§2.3 requires the replaced joker be played back into a meld
+  the same turn), stranding itself. Fixed the same way the row-pickup
+  version of this problem was fixed earlier: `canReplayJokerAfterSwap()`
+  verifies the joker will actually be replayable *before* committing to the
+  swap (checking both that a valid meld exists for it and that laying it
+  wouldn't itself use the player's entire remaining hand — a second,
+  narrower version of this same "would this use the whole hand" gap also
+  turned up in the plain row-pickup check, `canResolvePickup`, and is fixed
+  there too). A defensive fallback was also added: if the AI's obligated-
+  card resolution genuinely fails despite these checks, it now calls its
+  own "Undo pickup" rather than stalling forever — verified via a 1000-game/
+  8000+-round stress run (not just the standard 300-game suite) with zero
+  stalls, since this failure mode was rare enough to need the larger sample
+  to reliably catch.
+- **New mechanic: adding a card to a run can reposition an existing joker**,
+  not just extend an end (DESIGN.md §2.3/§3 decision 12) — e.g. a run of
+  JOKER(as 9),10,J becomes 10,J,QUEEN(joker),K when a K is added, by
+  reassigning what the joker stands for. `solveRun()` (the same span/gap-
+  filling logic `autoResolveMeld` already used for laying brand-new melds)
+  is now shared for this case too. Ownership of pre-existing cards is
+  unaffected by the reposition — only the newly added card gets newly
+  credited.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker
   UI — fine for testing legality/flow, not representative of final UX.
 - **AI is a greedy heuristic** (first candidate meld found, cheapest-looking
-  row pickups only, never uses tableau rearrangement or joker swaps) — not
-  the phase-2 AI, and not tuned for a good game feel. It does verify a row
-  pickup is actually resolvable before taking it, so it won't strand itself
-  the way a real player wouldn't.
+  row pickups only, never uses tableau rearrangement) — not the phase-2 AI,
+  and not tuned for a good game feel. It does consider joker swaps when
+  adding a matching real card, and verifies both row pickups and joker
+  swaps are actually resolvable before committing to them, so it won't
+  strand itself the way a real player wouldn't.
 - **No persistence** — refreshing the page loses game state.
 
 ## Postmortem: a real bug that shipped past automated testing (2026-07-23)
