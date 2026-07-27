@@ -67,8 +67,14 @@ const CascadeEngine = (() => {
       current: starter, // player index whose turn it is
       part: 'turn0', // 'turn0' | 1 | 2 | 3
       turn0: { stage: 'starterFirst', resolved: false, lastAcceptor: null },
-      pendingObligations: [], // card ids that must appear in a meld action before Part 3
-      lastDraw: null, // { source: 'row', takenCards, priorObligations } — undoable until any other Part 2 action happens
+      pendingObligations: [], // card ids that must be resolved (melded, or discarded back if rowObligationCardId) before Part 3
+      // Which entry in pendingObligations (if any) is the current row-take's
+      // bottom card -- the ONLY kind of obligation that may be resolved by
+      // discarding it straight back to the row instead of melding it
+      // (confirmed against the designer 2026-07-27). A joker swap-out
+      // obligation is never discard-eligible; it must be melded.
+      rowObligationCardId: null,
+      lastDraw: null, // { source: 'row', takenCards, priorObligations, priorRowObligationCardId } — undoable until any other Part 2 action happens
       rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
       rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
       comeOutAccum: [0, 0], // per-player running total toward the 40-point come-out bar (§2.4) — persists across turns until crossed, confirmed against the designer 2026-07-26
@@ -221,13 +227,15 @@ const CascadeEngine = (() => {
     r.hands[r.current].push(...taken);
     const bottomCard = taken[0];
     const priorObligations = r.pendingObligations.slice();
+    const priorRowObligationCardId = r.rowObligationCardId;
     r.pendingObligations = [bottomCard.id]; // supersedes any earlier row-take's obligation this Part 1
+    r.rowObligationCardId = bottomCard.id;
     r.rowDrawsThisPart1 += 1;
     logMsg(
       game,
-      `Player ${r.current + 1} took ${taken.length} card(s) from the open row (must meld ${bottomCard.rank}${bottomCard.suit || ''}).`
+      `Player ${r.current + 1} took ${taken.length} card(s) from the open row (must meld or discard back ${bottomCard.rank}${bottomCard.suit || ''}).`
     );
-    r.lastDraw = { source: 'row', takenCards: taken.slice(), priorObligations };
+    r.lastDraw = { source: 'row', takenCards: taken.slice(), priorObligations, priorRowObligationCardId };
   }
 
   // The deliberate step from Part 1 into Part 2, once the player is done
@@ -262,7 +270,7 @@ const CascadeEngine = (() => {
   function undoDraw(game) {
     const r = game.round;
     if (!canUndoDraw(game)) throw new Error('Nothing to undo.');
-    const { takenCards, priorObligations } = r.lastDraw;
+    const { takenCards, priorObligations, priorRowObligationCardId } = r.lastDraw;
     const hand = r.hands[r.current];
     for (const c of takenCards) {
       if (findCard(hand, c.id) === -1) throw new Error('Cannot undo — hand has changed since the draw.');
@@ -272,6 +280,7 @@ const CascadeEngine = (() => {
     }
     r.openRow.push(...takenCards);
     r.pendingObligations = priorObligations;
+    r.rowObligationCardId = priorRowObligationCardId;
     r.rowDrawsThisPart1 -= 1;
     r.part = 1; // reverts finishDrawing too, if it had already happened
     r.lastDraw = null;
@@ -475,8 +484,14 @@ const CascadeEngine = (() => {
     if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     const hand = r.hands[r.current];
     const selectedIds = cardSelections.map((s) => s.cardId);
-    const obligationsAfter = r.pendingObligations.filter((id) => !selectedIds.includes(id)).length;
-    assertLeavesHandUsable(hand, cardSelections.length, obligationsAfter);
+    // The row obligation doesn't need a melding "buffer" -- it can always
+    // be discarded back instead, even as the very last card -- so only
+    // meld-only obligations (a joker swap-out never being discard-eligible)
+    // count toward the "keep enough cards to still resolve everything" check.
+    const meldOnlyObligationsAfter = r.pendingObligations.filter(
+      (id) => !selectedIds.includes(id) && id !== r.rowObligationCardId
+    ).length;
+    assertLeavesHandUsable(hand, cardSelections.length, meldOnlyObligationsAfter);
     const result = validateNewMeldSelection(hand, cardSelections);
     if (!result.ok) throw new Error(result.error);
 
@@ -511,20 +526,26 @@ const CascadeEngine = (() => {
 
   function clearObligations(r, cardIds) {
     r.pendingObligations = r.pendingObligations.filter((id) => !cardIds.includes(id));
+    if (r.rowObligationCardId && cardIds.includes(r.rowObligationCardId)) {
+      r.rowObligationCardId = null;
+    }
   }
 
   // Guards the interaction between two rules that can otherwise collide:
   // melding your entire hand is illegal outright (§3 decision 8), but a
-  // "must meld this card" obligation (row-take or joker swap-out) demands
+  // "must meld this card" obligation (only ever a joker swap-out -- a row
+  // obligation can be discarded back instead, see discard() below) demands
   // exactly that card be melded that same turn. If an action is allowed to
-  // shrink the hand down to (or below) the number of cards still owed,
-  // those obligations become permanently unmeldable -- every remaining
-  // meld action requires keeping at least one card behind, so a hand that
-  // equals its own obligation list can never legally clear it, and discard
-  // refuses to run with obligations outstanding. Checked, pre-mutation,
-  // by every action that can shrink the hand or add a new obligation
-  // (layNewMeld, addToMeld, swapJoker) using the hand size and obligation
-  // count *after* the action would apply.
+  // shrink the hand down to (or below) the number of cards still owed to a
+  // meld-only obligation, that obligation becomes permanently unmeldable --
+  // every remaining meld action requires keeping at least one card behind,
+  // so a hand that equals its own meld-only-obligation list can never
+  // legally clear it, and discard refuses to run while any obligation is
+  // outstanding. Checked, pre-mutation, by every action that can shrink the
+  // hand or add a new obligation (layNewMeld, addToMeld, swapJoker) using
+  // the hand size and *meld-only* obligation count after the action would
+  // apply -- the row obligation, if any, is deliberately excluded from
+  // this count since it never needs a melding buffer.
   function assertLeavesHandUsable(hand, cardsBeingRemovedCount, obligationsAfterCount) {
     const remaining = hand.length - cardsBeingRemovedCount;
     if (obligationsAfterCount > 0 && remaining <= obligationsAfterCount) {
@@ -548,8 +569,10 @@ const CascadeEngine = (() => {
     const meld = r.tableau.find((m) => m.id === meldId);
     if (!meld) throw new Error('Meld not found.');
     const card = hand[ci];
-    const obligationsAfter = r.pendingObligations.filter((id) => id !== card.id).length;
-    assertLeavesHandUsable(hand, 1, obligationsAfter);
+    const meldOnlyObligationsAfter = r.pendingObligations.filter(
+      (id) => id !== card.id && id !== r.rowObligationCardId
+    ).length;
+    assertLeavesHandUsable(hand, 1, meldOnlyObligationsAfter);
 
     if (meld.type === 'set') {
       const rank = meld.slots.find((s) => s.card.rank !== 'JOKER').card.rank;
@@ -673,10 +696,14 @@ const CascadeEngine = (() => {
     // Net hand size is unchanged by a swap (replacement out, joker back
     // in), but the joker becomes a new obligation -- so check against the
     // hand as it stands now (0 cards "removed") but with that obligation
-    // added, alongside whatever obligations survive (the replacement card
-    // itself might have been one, and is resolved by this same action).
-    const obligationsAfter = r.pendingObligations.filter((id) => id !== replacementCardId).length + 1;
-    assertLeavesHandUsable(hand, 0, obligationsAfter);
+    // added, alongside whatever meld-only obligations survive (the
+    // replacement card itself might have been one, and is resolved by this
+    // same action; the row obligation, if any and if untouched, doesn't
+    // count here -- it can always be discarded back instead of melded).
+    // The reclaimed joker itself is always meld-only, hence the +1.
+    const meldOnlyObligationsAfter =
+      r.pendingObligations.filter((id) => id !== replacementCardId && id !== r.rowObligationCardId).length + 1;
+    assertLeavesHandUsable(hand, 0, meldOnlyObligationsAfter);
     if (meld.type === 'set') {
       if (replacement.rank !== slot.wildAs.rank) {
         throw new Error(
@@ -918,21 +945,42 @@ const CascadeEngine = (() => {
 
   // --- Part 3: discard --------------------------------------------------------
 
+  // True if there's at least one legal card to discard right now -- i.e.
+  // every outstanding obligation is either already cleared, or is exactly
+  // the row obligation (which discard() itself allows to be resolved by
+  // discarding it, rather than requiring a meld).
   function canProceedToDiscard(game) {
-    return game.round.part === 2 && game.round.pendingObligations.length === 0;
+    const r = game.round;
+    return r.part === 2 && r.pendingObligations.every((id) => id === r.rowObligationCardId);
   }
 
   function discard(game, cardId) {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
     if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
-    if (r.pendingObligations.length > 0) throw new Error('Outstanding cards must be melded first.');
     const hand = r.hands[r.current];
     const ci = findCard(hand, cardId);
     if (ci === -1) throw new Error('Card not in hand.');
+
+    // Any obligation OTHER than the row-take's bottom card must still be
+    // resolved (melded) before Part 3 -- confirmed the row-take card
+    // specifically may be discarded straight back to the row instead of
+    // melded (2026-07-27); a joker swap-out obligation was not included in
+    // that confirmation and still requires a meld.
+    const otherObligationsRemain = r.pendingObligations.some((id) => id !== cardId);
+    if (otherObligationsRemain) throw new Error('Outstanding cards must be melded first.');
+    const isObligated = r.pendingObligations.includes(cardId);
+    if (isObligated && cardId !== r.rowObligationCardId) {
+      throw new Error('This card was reclaimed from a joker swap and must be melded, not discarded, this turn.');
+    }
+
     const [card] = hand.splice(ci, 1);
     r.openRow.push(card);
-    logMsg(game, `Player ${r.current + 1} discarded ${card.rank}${card.suit || ''}.`);
+    if (isObligated) clearObligations(r, [cardId]);
+    logMsg(
+      game,
+      `Player ${r.current + 1} discarded ${card.rank}${card.suit || ''}${isObligated ? ' (the card taken from the row, back to the row)' : ''}.`
+    );
     if (hand.length === 0) {
       endRoundHandOut(game, r.current);
       return;
@@ -1063,6 +1111,7 @@ const CascadeEngine = (() => {
     canProceedToDiscard,
     discard,
     orderedRankValue,
+    solveRun,
     meldRunValues,
     meldSuit,
     autoResolveAddToMeld,

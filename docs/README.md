@@ -371,6 +371,60 @@ Applies everywhere (hands, tableau, open row) for visual consistency, not
 just the row. Confirmed via a real-browser screenshot with a 9-card
 overlapping open row — every card's rank/suit legible.
 
+**Fourteenth playtest round (2026-07-27)** — a real rule correction, plus
+two bugs it exposed while fixing it:
+- **The open-row pickup's bottom card can be discarded back, not just
+  melded** (DESIGN.md §2.5/§3 decision 17, confirmed against the
+  designer). Previously the engine and UI both hard-required melding it,
+  which was never actually confirmed and turned out to be wrong. Now
+  `discard()` allows discarding that specific card straight back to the
+  row as an alternative resolution — a normal Part 3 discard, not a
+  separate mechanic. A joker reclaimed via swap-out is unaffected and
+  still requires a meld; only the row-take's card is discard-eligible.
+  New `rowObligationCardId` tracks which (if any) outstanding obligation
+  qualifies. The obligation label and Discard button in the UI were
+  updated to match — the button now enables once the row card specifically
+  is selected, even with the obligation still technically outstanding.
+- **Real AI bug found by the user via a live screenshot**: taking a card
+  from the open row triggered "no legal meld possible" even though the
+  user's own follow-up actions proved Q,JOKER(as K),A-hearts was a
+  perfectly valid run. Root cause: the AI's `findCandidateRuns` only ever
+  detected a joker extending an *already-adjacent* pair by exactly one
+  rank — never a joker filling an internal gap between two non-adjacent
+  real cards (Q _ A needing a K), and never extending downward either.
+  Rewritten to try every same-suit anchor-card pair and hand the actual
+  gap-filling math to the engine's own `solveRun()` (now exported) instead
+  of a narrower hand-rolled search — this is the same solver `addToMeld`'s
+  joker-reposition fallback already relies on, just reused rather than
+  re-derived.
+- **A second, more severe bug this fix immediately exposed via
+  simulation**: `tryLayMeldContaining` (used both for the AI's own play
+  and indirectly for the human pre-take warning) only ever tried the
+  *first* candidate meld containing a given card and gave up entirely if
+  it failed — previously harmless, since the old candidate search only
+  ever produced one candidate per card. The rewritten search can now
+  legitimately produce several overlapping candidates for the same card
+  (e.g. one that would consume the player's *entire* hand — invalid — and
+  a smaller valid alternative using the same cards), and picking the
+  invalid one first caused a genuine infinite loop: the AI would take the
+  same row card, fail to place it, undo, and retake it forever. Caught by
+  the 1000-game stress simulation, not manual play. Fixed by trying every
+  candidate in order until one actually succeeds, in both
+  `tryLayMeldContaining` and the general already-come-out melding loop in
+  `playPart2`. Also updated `pickDiscard` to prioritize an outstanding row
+  obligation (since `discard()` now rejects any other card while it's
+  unresolved) and made the AI prefer discarding an unmeldable row card
+  back over a full pickup undo, which needlessly sacrifices the rest of
+  the scoop.
+- Verified with 6 new engine-level tests (`rules_check14.js`) covering the
+  discard-back rule itself, 4 new AI tests (`rules_check7.js`) for the
+  run-detection fix and the new discard-back fallback, 3000+ deterministic
+  simulated games across 3 separate seed ranges with zero stalls (the
+  original bug needed ~1000 games to surface even once), and real-browser
+  CDP verification of the full human-facing flow: taking an unmeldable row
+  card, seeing the updated obligation label, and discarding it back via an
+  actual UI click.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker

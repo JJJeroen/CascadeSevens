@@ -40,37 +40,53 @@ const CascadeAI = (() => {
     return out;
   }
 
+  // Tries every pair of same-suit real cards as a candidate run's low/high
+  // anchor, including everything else of that suit within the resulting
+  // span, and hands the actual gap-filling/extension math to the engine's
+  // own solveRun() (rather than re-deriving it here) so this correctly
+  // finds a joker filling an INTERNAL gap between two non-adjacent real
+  // cards (e.g. Q _ A needing a joker as K) -- not just a joker extending
+  // an already-adjacent pair. A prior version only handled the adjacent-
+  // pair-extended-upward-by-one case and missed exactly this, confirmed by
+  // a live report where Q-JOKER(as K)-A was rejected as "no legal meld
+  // possible" even though it's valid (2026-07-27).
   function findCandidateRuns(hand, jokersLeft) {
+    const E_ = E();
     const out = [];
+    const seen = new Set(); // dedupe identical slot sets across anchor pairs
     const groups = suitGroups(hand);
     for (const suit of Object.keys(groups)) {
-      for (const aceHigh of [false, true]) {
-        const cards = groups[suit]
-          .map((c) => ({ card: c, v: E().orderedRankValue(c.rank, aceHigh) }))
-          .sort((a, b) => a.v - b.v);
-        let i = 0;
-        while (i < cards.length) {
-          let j = i;
-          const window = [cards[i]];
-          while (j + 1 < cards.length && cards[j + 1].v === cards[j].v + 1) {
-            j++;
-            window.push(cards[j]);
-          }
-          if (window.length >= 3) {
-            const slots = window.map((w) => ({ cardId: w.card.id }));
-            out.push({ type: 'run', slots, value: slots.reduce((s, x) => s + E().pointValue(window.find((w) => w.card.id === x.cardId).card.rank), 0) });
-          } else if (window.length === 2 && jokersLeft.length > 0) {
-            const joker = jokersLeft[0];
-            const gapV = window[1].v + 1; // extend upward by one using joker
-            if (gapV <= 13) {
-              const rankName = Object.entries({ A: aceHigh ? 14 : 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, J: 11, Q: 12, K: 13 }).find(([, v]) => v === gapV)?.[0];
-              if (rankName) {
-                const slots = [...window.map((w) => ({ cardId: w.card.id })), { cardId: joker.id, wildAs: { rank: rankName, suit } }];
-                out.push({ type: 'run', slots, value: window.reduce((s, w) => s + E().pointValue(w.card.rank), 0) + 50, usesJoker: joker.id });
-              }
+      const cards = groups[suit];
+      if (cards.length < 2) continue;
+      for (let a = 0; a < cards.length; a++) {
+        for (let b = a; b < cards.length; b++) {
+          for (const jokerCount of [0, 1, jokersLeft.length].filter((n, i, arr) => arr.indexOf(n) === i)) {
+            if (jokerCount > jokersLeft.length) continue;
+            const anchors = [cards[a], cards[b]];
+            for (const aceHigh of [false, true]) {
+              const lo = Math.min(...anchors.map((c) => E_.orderedRankValue(c.rank, aceHigh)));
+              const hi = Math.max(...anchors.map((c) => E_.orderedRankValue(c.rank, aceHigh)));
+              const within = cards.filter((c) => {
+                const v = E_.orderedRankValue(c.rank, aceHigh);
+                return v >= lo && v <= hi;
+              });
+              if (within.length < 2) continue;
+              const result = E_.solveRun(within, jokersLeft.slice(0, jokerCount));
+              // solveRun itself has no minimum-length floor -- it assumes
+              // its caller already guarantees >=3 cards going in (true for
+              // its other callers, not for this exploratory search).
+              if (!result.ok || result.slots.length < 3) continue;
+              const key = result.slots.map((s) => s.cardId).sort().join(',');
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const value = result.slots.reduce((sum, s) => {
+                if (s.wildAs) return sum + E_.pointValue('JOKER');
+                return sum + E_.pointValue(within.find((c) => c.id === s.cardId).rank);
+              }, 0);
+              const usedJoker = result.slots.find((s) => s.wildAs);
+              out.push({ type: 'run', slots: result.slots, value, ...(usedJoker ? { usesJoker: usedJoker.cardId } : {}) });
             }
           }
-          i = j + 1;
         }
       }
     }
@@ -150,11 +166,17 @@ const CascadeAI = (() => {
         if (!placed) {
           // Genuinely stuck — shouldn't happen given canResolvePickup/
           // canReplayJokerAfterSwap, but those are heuristic candidate
-          // searches, not exhaustive proofs. Fall back to undoing the
-          // pickup that created this obligation (if that's what it was)
-          // rather than stranding the AI permanently; takeTurn will get
-          // another chance to draw differently next time it's called.
-          if (E_.canUndoDraw(game)) E_.undoDraw(game);
+          // searches, not exhaustive proofs. If this is the row-take's
+          // card specifically, the correct resolution is simply
+          // discarding it back (confirmed 2026-07-27) rather than melding
+          // it — so just break here and let takeTurn's normal end-of-turn
+          // discard handle it (pickDiscard prioritizes an outstanding row
+          // obligation). That keeps whatever else was already melded or
+          // kept from the scoop, unlike a full undo which would sacrifice
+          // all of it just to get rid of the one unmeldable card. Only a
+          // genuinely non-discardable obligation (a reclaimed joker from
+          // a swap) falls back to undoing the pickup that created it.
+          if (cardId !== r.rowObligationCardId && E_.canUndoDraw(game)) E_.undoDraw(game);
           break;
         }
         continue;
@@ -190,12 +212,19 @@ const CascadeAI = (() => {
       const sets = findCandidateSets(hand, jokersLeft);
       const runs = findCandidateRuns(hand, jokersLeft);
       const candidates = [...sets, ...runs].sort((a, b) => b.value - a.value);
-      if (candidates.length > 0) {
+      // Try candidates in value order until one actually succeeds, rather
+      // than betting everything on the highest-value one -- overlapping
+      // candidates for the same cards can include one that would use the
+      // entire hand (invalid) ranked ahead of an equally legal smaller one.
+      let laid = false;
+      for (const cand of candidates) {
         try {
-          E_.layNewMeld(game, candidates[0].slots);
-          continue;
-        } catch (e) { /* fallthrough */ }
+          E_.layNewMeld(game, cand.slots);
+          laid = true;
+          break;
+        } catch (e) { /* try the next candidate */ }
       }
+      if (laid) continue;
 
       let shed = false;
       for (const card of hand) {
@@ -281,18 +310,35 @@ const CascadeAI = (() => {
   function tryLayMeldContaining(game, cardId, hand, jokersLeft) {
     const sets = findCandidateSets(hand, jokersLeft).filter((c) => c.slots.some((s) => s.cardId === cardId));
     const runs = findCandidateRuns(hand, jokersLeft).filter((c) => c.slots.some((s) => s.cardId === cardId));
-    const cand = [...sets, ...runs][0];
-    if (!cand) return false;
-    try {
-      E().layNewMeld(game, cand.slots);
-      return true;
-    } catch (e) {
-      return false;
+    // Multiple overlapping candidates can legitimately exist for the same
+    // card (e.g. a run findable via several different anchor spans) --
+    // some may turn out to use the entire hand (which layNewMeld rejects)
+    // even though a smaller, equally valid alternative exists. Try every
+    // candidate in turn rather than betting everything on the first one;
+    // giving up after a single failure caused a real AI stall (confirmed
+    // 2026-07-27) whenever the first-found candidate happened to be the
+    // whole-hand one.
+    for (const cand of [...sets, ...runs]) {
+      try {
+        E().layNewMeld(game, cand.slots);
+        return true;
+      } catch (e) { /* try the next candidate */ }
     }
+    return false;
   }
 
   function pickDiscard(game) {
-    const hand = game.round.hands[game.round.current];
+    const r = game.round;
+    // If a row-take obligation is still outstanding at this point, it MUST
+    // be the card discarded -- canProceedToDiscard() only allows discarding
+    // at all once every OTHER obligation is cleared, and discard() itself
+    // rejects any other card while this one is still unresolved. It's
+    // exactly this obligation's own discard-back resolution (2026-07-27),
+    // not a free choice of what to shed.
+    if (r.rowObligationCardId && r.pendingObligations.includes(r.rowObligationCardId)) {
+      return r.rowObligationCardId;
+    }
+    const hand = r.hands[r.current];
     const nonJokers = hand.filter((c) => c.rank !== 'JOKER');
     const pool = nonJokers.length ? nonJokers : hand;
     pool.sort((a, b) => E().pointValue(b.rank) - E().pointValue(a.rank));

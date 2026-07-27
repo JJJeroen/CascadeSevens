@@ -416,11 +416,16 @@ function renderControls() {
   const obligEl = $('obligationLabel');
   if (isHumanTurn && !rearranging && r.pendingObligations.length > 0) {
     obligEl.hidden = false;
-    const names = r.pendingObligations.map((id) => {
+    // The row-take's bottom card may be discarded straight back instead of
+    // melded; any other obligation (a reclaimed joker from a swap) must
+    // still be melded. Label each accordingly rather than a blanket "must
+    // meld" that's no longer accurate for the row card.
+    const parts = r.pendingObligations.map((id) => {
       const c = hand.find((h) => h.id === id);
-      return c ? cardText(c) : id;
+      const label = c ? cardText(c) : id;
+      return id === r.rowObligationCardId ? `${label} (meld it or discard it back)` : `${label} (must meld)`;
     });
-    obligEl.textContent = `Must meld: ${names.join(', ')}${CascadeEngine.canUndoDraw(game) ? ' (stuck? use "Undo pickup")' : ''}`;
+    obligEl.textContent = `Owed this turn: ${parts.join(', ')}${CascadeEngine.canUndoDraw(game) ? ' (stuck? use "Undo pickup")' : ''}`;
   } else {
     obligEl.hidden = true;
   }
@@ -455,7 +460,16 @@ function renderControls() {
   const targetedHasJoker = targetedMeld && targetedMeld.slots.some((s) => s.card.rank === 'JOKER');
   $('swapJokerBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedHasJoker);
   $('pullMeldBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
-  $('discardBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && r.pendingObligations.length === 0 && selected.length === 1);
+  // Mirrors engine.js's discard() legality exactly: every obligation OTHER
+  // than the selected card must already be cleared, and if the selected
+  // card IS itself obligated, it must be the row-take card specifically
+  // (discard-eligible) rather than a reclaimed joker (meld-only).
+  const selectedId = selected.length === 1 ? selected[0].id : null;
+  const canDiscardSelected =
+    selectedId !== null &&
+    !r.pendingObligations.some((id) => id !== selectedId) &&
+    (!r.pendingObligations.includes(selectedId) || selectedId === r.rowObligationCardId);
+  $('discardBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && canDiscardSelected);
   $('startRearrangeBtn').disabled = rearranging || !(isHumanTurn && CascadeEngine.canStartRearrange(game));
 
   $('rearrangeControls').hidden = !rearranging;
