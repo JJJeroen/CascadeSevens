@@ -3,6 +3,51 @@ requirements
 - show game score as well as round score?
 - during rearrange , it must be clear....or not
 - how can player select a meld on a phone....
+- give each player a color ; use color in hand and on series on table and score
 - buttons/functions: 
 -- draw closed pile > player taps closed pile
 -- done drawing > niet nodig? omdat je tegelijk mag rearrangen en trekken?
+-- undo pickup ) Undo last move 
+-- clear selection ) no selection no clear button 
+-- lay new meld ) drag 1 by 1 ) auto arrange
+-- add sel card ) drag close to meld
+-- swap joker ) drop card close and drag joker elsewhere
+-- pull my cards ) existing undo
+-- discard ) drag to open row 
+
+
+elements:
+menu...or pop over 
+30% of the hand visible at the top p2 and bottom p1
+cascade 
+score 
+table 
+hand
+
+=  HHHHHHH 
+X OOOOOO  650
+A23 777   930
+JQKA
+§  HHHHHHH 
+
+cascade + table together can be zoomed  
+
+
+naming 
+- cascade break 
+- meld series ...
+- pile 
+- open row.. cascade 
+- tableau....table 
+- hand 
+- round 
+- turn 
+- game 
+- coming out ) place series?
+
+menu items 
+new 
+help
+etc?
+
+
