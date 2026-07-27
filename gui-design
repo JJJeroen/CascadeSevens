@@ -7,33 +7,39 @@ requirements
 - buttons/functions: 
 -- draw closed pile > player taps closed pile
 -- done drawing > niet nodig? omdat je tegelijk mag rearrangen en trekken?
--- undo pickup ) Undo last move 
+-- undo pickup ) Undo last move, show §
 -- clear selection ) no selection no clear button 
 -- lay new meld ) drag 1 by 1 ) auto arrange
 -- add sel card ) drag close to meld
 -- swap joker ) drop card close and drag joker elsewhere
 -- pull my cards ) existing undo
 -- discard ) drag to open row 
-
+- 'turn0'  ) start player taps open card to swap and pile to decline 
+then the other player does same 
+- show a few balloons with helptext with x to never show again until reinstall 
+- show round winner and round scores popup on game end
+- show newgame popup on game end? wel zo logisch 
+- card style...rank and suit must be visible on the side or corner..maybe also in the middle 
 
 elements:
-menu...or pop over 
+menu pop over 
 30% of the hand visible at the top p2 and bottom p1
 cascade 
 score 
 table 
-hand
+hand you 
 
-=  HHHHHHH 
-X OOOOOO  650
-A23 777   930
-JQKA
-§  HHHHHHH 
+
+=     H H H H H H H 
+X OOOOOO              you 650
+A23 777     other / they  930
+JQKA   333            round 1
+§     H H H H H H H 
 
 cascade + table together can be zoomed  
 
 
-naming 
+naming :
 - cascade break 
 - meld series ...
 - pile 
@@ -45,9 +51,11 @@ naming
 - game 
 - coming out ) place series?
 
+
 menu items 
 new 
+game length 300 or 1000 or just enter a value 
 help
-etc?
+more?
 
 
