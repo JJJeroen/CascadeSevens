@@ -620,6 +620,16 @@ const CascadeEngine = (() => {
       else remaining.push(slot);
     }
     if (pulled.length !== ids.length) throw new Error('Some cards were not found in that meld.');
+    // Confirmed against the designer (2026-07-27): a player may only pull
+    // cards THEY themselves currently own (i.e. placed most recently, per
+    // §2.8's ownership-follows-placement rule) — not cards credited to the
+    // opponent, even though either player can freely ADD to any meld.
+    const notMine = pulled.find((slot) => slot.ownerId !== r.current);
+    if (notMine) {
+      throw new Error(
+        `Can't pull ${notMine.card.rank}${notMine.card.suit || ''} — it's credited to the other player, and you can only pull back cards you placed yourself.`
+      );
+    }
     if (remaining.length > 0) {
       const check = remaining.length >= 3 ? validateMeldSlots(remaining) : { ok: false };
       if (!check.ok) throw new Error('Pulling those cards would leave an invalid meld behind (fewer than 3 cards, or a broken run).');

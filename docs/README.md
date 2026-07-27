@@ -113,6 +113,26 @@ code was written ("tapping a specific buried card... is a real interaction-
 design risk") — worth a dedicated look before the native UI, not something
 fixed here.
 
+**Fourth playtest round (2026-07-27)** — two more fixes from live play:
+- **Real bug: pulling was letting a player take back cards the opponent had
+  laid.** Confirmed against the designer: rearrangement is restricted to
+  cards the pulling player currently owns — either player can still *add*
+  to any meld, but only *pull back* their own. `pullFromMeld` now rejects
+  with a specific message naming the card and explaining why. The "Pull
+  entire targeted meld" button was renamed "Pull my cards from targeted
+  meld" and now only ever attempts the player's own subset of a meld — on a
+  mixed-ownership meld, that can still legitimately fail if it would leave
+  the opponent's remaining cards below 3 (a correct, if slightly
+  frustrating, interaction between two independently-correct rules, not a
+  new bug).
+- **Targeting made sticky and visible**, after a second report of "the
+  button is disabled and I don't know why": clicking a meld's border used
+  to *toggle* targeting on a re-click, silently un-targeting it with no
+  feedback — a plausible cause of exactly that confusion. Meld clicks are no
+  longer a toggle (always (re-)targets); a new "Targeted meld: …" indicator
+  sits next to "Selected: …"; and "Clear selection" (now "Clear selection &
+  target") resets both at once instead of leaving stale state behind.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker

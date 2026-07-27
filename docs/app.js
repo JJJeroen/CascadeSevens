@@ -205,7 +205,11 @@ function renderTableau() {
     const box = document.createElement('div');
     box.className = 'meld' + (meld.id === targetedMeldId ? ' targeted' : '');
     box.addEventListener('click', () => {
-      targetedMeldId = targetedMeldId === meld.id ? null : meld.id;
+      // Deliberately not a toggle: re-clicking an already-targeted meld
+      // used to un-target it with no clear feedback, which was a likely
+      // cause of "the button is disabled for no reason" reports. Clicking
+      // a meld always (re-)targets it; use "Clear selection" to untarget.
+      targetedMeldId = meld.id;
       render();
     });
     const cardsWrap = document.createElement('div');
@@ -321,13 +325,21 @@ function renderControls() {
     selCountEl.hidden = true;
   }
 
+  const targetedMeld = r.tableau.find((m) => m.id === targetedMeldId);
+  const targetEl = $('targetIndicator');
+  if (isHumanTurn && r.part === 2 && targetedMeld) {
+    targetEl.hidden = false;
+    targetEl.textContent = `Targeted meld: ${targetedMeld.slots.map((s) => cardText(s.card)).join(', ')}`;
+  } else {
+    targetEl.hidden = true;
+  }
+
   $('drawPileBtn').disabled = !(isHumanTurn && CascadeEngine.canDrawFromClosedPile(game));
   $('finishDrawingBtn').disabled = !(isHumanTurn && CascadeEngine.canFinishDrawing(game));
   $('undoDrawBtn').disabled = !(isHumanTurn && CascadeEngine.canUndoDraw(game));
-  $('clearSelectionBtn').disabled = !(isHumanTurn && selected.length > 0);
+  $('clearSelectionBtn').disabled = !(isHumanTurn && (selected.length > 0 || targetedMeldId));
   $('layMeldBtn').disabled = !(isHumanTurn && r.part === 2 && selected.length >= 3);
   $('addToMeldBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedMeldId);
-  const targetedMeld = r.tableau.find((m) => m.id === targetedMeldId);
   const targetedHasJoker = targetedMeld && targetedMeld.slots.some((s) => s.card.rank === 'JOKER');
   $('swapJokerBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedHasJoker);
   $('pullMeldBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
@@ -378,6 +390,7 @@ $('finishDrawingBtn').addEventListener('click', () => {
 
 $('clearSelectionBtn').addEventListener('click', () => {
   selectedHandCardIds.clear();
+  targetedMeldId = null;
   render();
 });
 
@@ -432,9 +445,13 @@ $('swapJokerBtn').addEventListener('click', () => {
 $('pullMeldBtn').addEventListener('click', () => {
   const meld = game.round.tableau.find((m) => m.id === targetedMeldId);
   if (!meld) return showError('Target a meld first.');
-  const allCardIds = meld.slots.map((s) => s.card.id);
+  // Only pull cards this player actually owns — a meld can be a mix of
+  // both players' cards (either can add to any meld), but pulling is
+  // restricted to what you placed yourself.
+  const ownCardIds = meld.slots.filter((s) => s.ownerId === 0).map((s) => s.card.id);
+  if (ownCardIds.length === 0) return showError("You don't have any cards of your own in this meld to pull.");
   try {
-    CascadeEngine.pullFromMeld(game, meld.id, allCardIds);
+    CascadeEngine.pullFromMeld(game, meld.id, ownCardIds);
     targetedMeldId = null;
     afterHumanAction();
   } catch (e) {
