@@ -32,8 +32,18 @@
     <h2>Open Row <span class="hint">(click a card to scoop it + everything on top — the bottom one must be melded this turn; repeatable in Part 1, but locks out the closed pile for this turn)</span></h2>
     <div id="openRow" class="open-row"></div>
 
-    <h2>Tableau <span class="hint">(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)</span></h2>
+    <h2>Tableau <span id="tableauHint" class="hint">(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)</span></h2>
     <div id="tableau" class="tableau"></div>
+    <div id="rearrangeHandPoolWrap" hidden>
+      <h2>Your hand, in the draft <span class="hint">(click a card, then click a group below to move it there)</span></h2>
+      <div id="rearrangeHandPool" class="open-row"></div>
+    </div>
+    <div id="rearrangeControls" class="controls" hidden>
+      <button id="rearrangeNewGroupBtn">Move selected to a new group</button>
+      <button id="rearrangeToHandBtn">Move selected to hand</button>
+      <button id="commitRearrangeBtn">Commit rearrange</button>
+      <button id="cancelRearrangeBtn">Cancel rearrange</button>
+    </div>
   </section>
 
   <section class="hand-area">
@@ -53,6 +63,7 @@
       <button id="addToMeldBtn">Add selected card to targeted meld</button>
       <button id="swapJokerBtn">Swap targeted joker for selected card</button>
       <button id="pullMeldBtn">Pull my cards from targeted meld back to hand</button>
+      <button id="startRearrangeBtn">Rearrange tableau…</button>
       <button id="discardBtn">Discard selected</button>
     </div>
   </section>

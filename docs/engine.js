@@ -63,6 +63,7 @@ const CascadeEngine = (() => {
       turn0: { stage: 'p1first', resolved: false }, // stage: p1first -> p2second -> p1followup -> resolved
       pendingObligations: [], // card ids that must appear in a meld action before Part 3
       lastDraw: null, // { source: 'row', takenCards, priorObligations } — undoable until any other Part 2 action happens
+      rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
       rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
       comeOutAccum: [0, 0], // per-player running total toward the 40-point come-out bar (§2.4) — persists across turns until crossed, confirmed against the designer 2026-07-26
       comeOutMetThisTurn: false,
@@ -337,10 +338,11 @@ const CascadeEngine = (() => {
     return { ok: false };
   }
 
-  function autoResolveMeld(hand, cardIds) {
-    if (cardIds.length < 3) return { ok: false, error: 'A meld needs at least 3 cards.' };
-    const cards = cardIds.map((id) => hand.find((h) => h.id === id));
-    if (cards.some((c) => !c)) return { ok: false, error: 'Selected card not in hand.' };
+  // Given a plain array of real card objects, does ANY valid meld (set or
+  // run) exist for them — including every way any jokers among them could
+  // fill in? Shared by autoResolveMeld (a hand selection) and rearrange
+  // sessions (a draft group of cards pulled from anywhere).
+  function resolveGroup(cards) {
     const jokers = cards.filter((c) => c.rank === 'JOKER');
     const reals = cards.filter((c) => c.rank !== 'JOKER');
     if (reals.length === 0) return { ok: false, error: 'A meld needs at least one real (non-joker) card.' };
@@ -359,7 +361,14 @@ const CascadeEngine = (() => {
     const runResult = solveRun(reals, jokers);
     if (runResult.ok) return runResult;
 
-    return { ok: false, error: 'No valid set or run is possible with the selected cards.' };
+    return { ok: false, error: 'No valid set or run is possible with these cards.' };
+  }
+
+  function autoResolveMeld(hand, cardIds) {
+    if (cardIds.length < 3) return { ok: false, error: 'A meld needs at least 3 cards.' };
+    const cards = cardIds.map((id) => hand.find((h) => h.id === id));
+    if (cards.some((c) => !c)) return { ok: false, error: 'Selected card not in hand.' };
+    return resolveGroup(cards);
   }
 
   // slots: [{cardId, wildAs?: {rank, suit?}}] pulled from hand, in the order
@@ -449,6 +458,7 @@ const CascadeEngine = (() => {
     // cardSelections: [{cardId, wildAs?}]
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
+    if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     const hand = r.hands[r.current];
     if (cardSelections.length === hand.length) {
       throw new Error('Cannot use your entire hand in a meld — you must keep at least one card to discard.');
@@ -492,6 +502,7 @@ const CascadeEngine = (() => {
   function addToMeld(game, meldId, cardId, wildAs) {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
+    if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     if (!r.comeOut[r.current]) throw new Error('Must come out before adding to any meld.');
     const hand = r.hands[r.current];
     if (hand.length <= 1) {
@@ -611,6 +622,7 @@ const CascadeEngine = (() => {
   function swapJoker(game, meldId, jokerCardId, replacementCardId) {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
+    if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     if (!r.comeOut[r.current]) throw new Error('Must come out before swapping a joker.');
     const meld = r.tableau.find((m) => m.id === meldId);
     if (!meld) throw new Error('Meld not found.');
@@ -622,10 +634,16 @@ const CascadeEngine = (() => {
     if (ci === -1) throw new Error('Replacement card not in hand.');
     const replacement = hand[ci];
     if (meld.type === 'set') {
-      if (replacement.rank !== slot.wildAs.rank) throw new Error('Replacement rank does not match.');
+      if (replacement.rank !== slot.wildAs.rank) {
+        throw new Error(
+          `This joker stands in for a ${slot.wildAs.rank} — swap requires the exact rank. To add your card to this meld instead without touching the joker, use "Add selected card to targeted meld."`
+        );
+      }
     } else {
       if (replacement.rank !== slot.wildAs.rank || replacement.suit !== meldSuit(meld)) {
-        throw new Error('Replacement card does not match what the joker represents.');
+        throw new Error(
+          `This joker stands in for the ${slot.wildAs.rank} of this run's suit — swap requires that exact card. If your card would extend the run instead, use "Add selected card to targeted meld."`
+        );
       }
     }
     hand.splice(ci, 1);
@@ -658,6 +676,7 @@ const CascadeEngine = (() => {
   function pullFromMeld(game, meldId, cardIds) {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
+    if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     if (!r.comeOut[r.current]) throw new Error('Must come out before rearranging the tableau.');
     const meld = r.tableau.find((m) => m.id === meldId);
     if (!meld) throw new Error('Meld not found.');
@@ -693,6 +712,166 @@ const CascadeEngine = (() => {
     logMsg(game, `Player ${r.current + 1} pulled ${pulled.length} card(s) back from the tableau.`);
   }
 
+  // --- Full tableau rearrange session (§2.3, added 2026-07-27) --------------
+  // A draft-then-commit workflow, distinct from the single-action pull
+  // above: within a session, ANY card on the table (either player's) plus
+  // the current player's own hand can be freely regrouped into new,
+  // possibly temporarily-illegal groupings — nothing is validated until
+  // commitRearrange, which checks every group and either applies the whole
+  // result or reports the specific problems so the player can keep
+  // adjusting or cancel back to exactly where they started. This is
+  // deliberately more permissive mid-session than the ownership-restricted
+  // single pull (which stays as the quick/simple option) — but two
+  // invariants keep it from reopening the exploit that restriction closed:
+  // (1) a pre-existing card always keeps its ORIGINAL owner no matter which
+  // group it ends up in — only cards newly brought in from hand are
+  // credited to the committing player; (2) any pre-existing card that isn't
+  // the committing player's own must end up in SOME valid group at commit
+  // — it can't just be absorbed into the committing player's hand.
+  // r.tableau/r.hands are never touched until a successful commit, so nothing
+  // else in the app sees an inconsistent state while a session is open.
+
+  function canStartRearrange(game) {
+    const r = game.round;
+    return (
+      r.part === 2 &&
+      !r.ended &&
+      r.comeOut[r.current] &&
+      r.pendingObligations.length === 0 &&
+      !r.rearrange
+    );
+  }
+
+  function startRearrange(game) {
+    if (!canStartRearrange(game)) {
+      throw new Error('Cannot start rearranging right now.');
+    }
+    const r = game.round;
+    const cardById = {};
+    const originalOwnerByCardId = {};
+    const groups = {};
+    let groupCounter = 0;
+    for (const meld of r.tableau) {
+      const groupId = `g${groupCounter++}`;
+      groups[groupId] = meld.slots.map((s) => s.card.id);
+      for (const s of meld.slots) {
+        cardById[s.card.id] = s.card;
+        originalOwnerByCardId[s.card.id] = s.ownerId;
+      }
+    }
+    const handPool = r.hands[r.current].map((c) => c.id);
+    for (const c of r.hands[r.current]) cardById[c.id] = c;
+
+    r.rearrange = { cardById, originalOwnerByCardId, groups, handPool, nextGroupId: groupCounter };
+  }
+
+  function rearrangeState(game) {
+    const r = game.round;
+    if (!r.rearrange) return null;
+    const rr = r.rearrange;
+    const groups = Object.keys(rr.groups).map((groupId) => {
+      const cards = rr.groups[groupId].map((id) => rr.cardById[id]);
+      const check = cards.length >= 3 ? resolveGroup(cards) : { ok: false };
+      return { groupId, cardIds: rr.groups[groupId].slice(), valid: !!check.ok, type: check.ok ? check.type : null };
+    });
+    return { groups, handPool: rr.handPool.slice() };
+  }
+
+  // destination: an existing group id, 'new' for a fresh group, or 'hand'.
+  function rearrangeMoveCard(game, cardId, destination) {
+    const r = game.round;
+    if (!r.rearrange) throw new Error('Not currently rearranging.');
+    const rr = r.rearrange;
+    if (!rr.cardById[cardId]) throw new Error('Unknown card.');
+    for (const gid of Object.keys(rr.groups)) {
+      rr.groups[gid] = rr.groups[gid].filter((id) => id !== cardId);
+    }
+    rr.handPool = rr.handPool.filter((id) => id !== cardId);
+    for (const gid of Object.keys(rr.groups)) {
+      if (rr.groups[gid].length === 0) delete rr.groups[gid];
+    }
+    if (destination === 'hand') {
+      rr.handPool.push(cardId);
+    } else if (destination === 'new') {
+      const newId = `g${rr.nextGroupId++}`;
+      rr.groups[newId] = [cardId];
+    } else if (rr.groups[destination]) {
+      rr.groups[destination].push(cardId);
+    } else {
+      throw new Error('Unknown destination group.');
+    }
+  }
+
+  function cancelRearrange(game) {
+    const r = game.round;
+    if (!r.rearrange) throw new Error('Not currently rearranging.');
+    r.rearrange = null;
+  }
+
+  function commitRearrange(game) {
+    const r = game.round;
+    if (!r.rearrange) throw new Error('Not currently rearranging.');
+    const rr = r.rearrange;
+    const groupIds = Object.keys(rr.groups);
+    const resolvedByGroup = {};
+    const problems = [];
+
+    for (const gid of groupIds) {
+      const cardIds = rr.groups[gid];
+      const cards = cardIds.map((id) => rr.cardById[id]);
+      if (cards.length < 3) {
+        problems.push({ groupId: gid, cardIds, error: 'A meld needs at least 3 cards.' });
+        continue;
+      }
+      const resolved = resolveGroup(cards);
+      if (!resolved.ok) {
+        problems.push({ groupId: gid, cardIds, error: resolved.error || 'Not a valid set or run.' });
+      } else {
+        resolvedByGroup[gid] = resolved;
+      }
+    }
+
+    // A pre-existing card that isn't the committing player's own can't be
+    // left sitting in hand — it has to end up in some valid group.
+    for (const cardId of rr.handPool) {
+      const originalOwner = rr.originalOwnerByCardId[cardId];
+      if (originalOwner !== undefined && originalOwner !== r.current) {
+        const c = rr.cardById[cardId];
+        problems.push({
+          cardId,
+          error: `${c.rank}${c.suit || ''} belongs to the other player and can't be left in your hand — it must stay in some meld.`,
+        });
+      }
+    }
+
+    const newHandIds = rr.handPool.slice();
+    if (problems.length === 0 && newHandIds.length === 0) {
+      problems.push({ error: 'You must keep at least one card in hand — you cannot place your entire hand into the tableau.' });
+    }
+
+    if (problems.length > 0) return { ok: false, problems };
+
+    const newTableau = groupIds.map((gid) => {
+      const resolved = resolvedByGroup[gid];
+      return {
+        id: gid,
+        type: resolved.type,
+        slots: resolved.slots.map((s) => ({
+          card: rr.cardById[s.cardId],
+          ownerId: rr.originalOwnerByCardId[s.cardId] !== undefined ? rr.originalOwnerByCardId[s.cardId] : r.current,
+          wildAs: s.wildAs || null,
+        })),
+      };
+    });
+
+    r.tableau = newTableau;
+    r.hands[r.current] = newHandIds.map((id) => rr.cardById[id]);
+    r.rearrange = null;
+    r.lastDraw = null;
+    logMsg(game, `Player ${r.current + 1} rearranged the tableau.`);
+    return { ok: true };
+  }
+
   // --- Part 3: discard --------------------------------------------------------
 
   function canProceedToDiscard(game) {
@@ -702,6 +881,7 @@ const CascadeEngine = (() => {
   function discard(game, cardId) {
     const r = game.round;
     if (r.part !== 2) throw new Error('Not in Part 2.');
+    if (r.rearrange) throw new Error('Finish or cancel the current rearrange session first.');
     if (r.pendingObligations.length > 0) throw new Error('Outstanding cards must be melded first.');
     const hand = r.hands[r.current];
     const ci = findCard(hand, cardId);
@@ -830,6 +1010,12 @@ const CascadeEngine = (() => {
     addToMeld,
     swapJoker,
     pullFromMeld,
+    canStartRearrange,
+    startRearrange,
+    rearrangeState,
+    rearrangeMoveCard,
+    cancelRearrange,
+    commitRearrange,
     canProceedToDiscard,
     discard,
     orderedRankValue,

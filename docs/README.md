@@ -211,6 +211,35 @@ a run, matching visual left-to-right sequence order.
   suit symbol noticeably larger, stacked below the rank) instead of one
   plain text string.
 
+**Ninth playtest round (2026-07-27)** — a UX fix and a substantial new
+feature:
+- **Clearer error when a joker-swap doesn't match.** A run of JOKER(as 9),
+  10,J plus a matching-suit Q correctly lets you *add* the Q (it directly
+  extends the run) but correctly *rejects* swapping the Q in for the joker
+  (it's not the 9 the joker represents — swap only ever trades a joker for
+  the exact card it stands for). That distinction was real but the error
+  message for the rejected swap didn't explain it. Both `swapJoker`'s error
+  and the "click the joker directly" UI path now name the exact rank (and
+  suit, for runs) the joker represents, and point at "Add selected card to
+  targeted meld" as the right button if the goal was just extending the run.
+- **New: full tableau rearrange session** (DESIGN.md §2.3/§3 decision 13),
+  a draft-then-commit mode alongside the existing single-card pull. Click
+  "Rearrange tableau…" to start: every card on the table (either player's)
+  plus your own hand becomes freely regroupable — click a card, then click
+  a group to move it there, "Move selected to a new group", or "Move
+  selected to hand". Groups show live valid/invalid feedback (green/red
+  border) as you go, using the same `resolveGroup()` solver that powers
+  auto-resolved melds and joker repositioning. Nothing is written back to
+  the real game state until "Commit rearrange" — if any group is still
+  invalid, or a non-owned pre-existing card got left in hand, it lists the
+  specific problems and lets you keep adjusting; "Cancel rearrange" reverts
+  to the exact pre-session state. Two invariants keep the wider mid-session
+  access (any card, not just your own) from reopening the exploit the
+  single-pull's ownership restriction was built to close: a pre-existing
+  card always keeps its *original* owner no matter which group it ends up
+  in, and a pre-existing card that isn't yours can't simply be left in
+  hand — it has to end up in some valid group.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker

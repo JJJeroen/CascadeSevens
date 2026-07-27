@@ -113,6 +113,8 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   background: rgba(255,255,255,0.03);
 }
 .meld.targeted { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.meld.draft-valid { border-style: solid; border-color: #6fbf73; }
+.meld.draft-invalid { border-style: solid; border-color: #d9534f; }
 .meld .meld-cards { display: flex; gap: 0.35rem; }
 
 .card {

@@ -7,6 +7,7 @@ let game = null;
 let selectedHandCardIds = new Set();
 let targetedMeldId = null;
 let turn0UiMode = 'idle'; // 'idle' | 'select-swap'
+let rearrangeSelectedCardId = null; // card currently picked up within an active rearrange session
 
 const $ = (id) => document.getElementById(id);
 
@@ -111,7 +112,14 @@ function render() {
 
   renderBanner();
   renderOpenRow();
-  renderTableau();
+  if (game.round.rearrange) {
+    renderRearrangeView();
+  } else {
+    $('rearrangeHandPoolWrap').hidden = true;
+    $('tableauHint').textContent =
+      "(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)";
+    renderTableau();
+  }
   renderHand();
   renderControls();
   renderLog();
@@ -257,6 +265,15 @@ function renderTableau() {
               }
               return;
             }
+            // A card was selected and they clicked the joker specifically —
+            // almost certainly a swap attempt, not a rearrange. Explain the
+            // mismatch directly instead of silently falling through to an
+            // unrelated (and likely also-failing) pull.
+            const suitHint = meld.type === 'run' ? SUIT_SYMBOL[CascadeEngine.meldSuit(meld)] : '';
+            showError(
+              `This joker stands in for ${slot.wildAs.rank}${suitHint} — your selected ${cardText(replacement)} doesn't match, so it can't be swapped in. If it would extend or fit this meld instead, target the meld's border and use "Add selected card to targeted meld."`
+            );
+            return;
           }
           try {
             CascadeEngine.pullFromMeld(game, meld.id, [slot.card.id]);
@@ -273,10 +290,66 @@ function renderTableau() {
   });
 }
 
+// Draft-then-commit tableau rearrange (§2.3, added 2026-07-27): renders the
+// SESSION's draft groups + hand pool into the same containers renderTableau
+// normally uses, entirely separate from game.round.tableau/hands until a
+// successful commit. Click a card to pick it up, then click a group (or
+// "Move selected to a new group" / "...to hand") to place it there.
+function renderRearrangeView() {
+  $('tableauHint').textContent =
+    '(drafting — nothing is final until you commit; click a card, then click a group to move it there)';
+  const el = $('tableau');
+  el.innerHTML = '';
+  const state = CascadeEngine.rearrangeState(game);
+  const cardById = game.round.rearrange.cardById;
+
+  state.groups.forEach((g) => {
+    const box = document.createElement('div');
+    box.className = 'meld ' + (g.valid ? 'draft-valid' : 'draft-invalid');
+    box.title = g.valid ? `Valid ${g.type}` : 'Not a valid set or run yet';
+    box.addEventListener('click', () => {
+      if (!rearrangeSelectedCardId) return;
+      try {
+        CascadeEngine.rearrangeMoveCard(game, rearrangeSelectedCardId, g.groupId);
+        rearrangeSelectedCardId = null;
+        render();
+      } catch (e) {
+        showError(e.message);
+      }
+    });
+    const cardsWrap = document.createElement('div');
+    cardsWrap.className = 'meld-cards';
+    g.cardIds.forEach((cardId) => {
+      const cardEl = buildCardEl(cardById[cardId], { selected: cardId === rearrangeSelectedCardId, pickable: true });
+      cardEl.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        rearrangeSelectedCardId = rearrangeSelectedCardId === cardId ? null : cardId;
+        render();
+      });
+      cardsWrap.appendChild(cardEl);
+    });
+    box.appendChild(cardsWrap);
+    el.appendChild(box);
+  });
+
+  $('rearrangeHandPoolWrap').hidden = false;
+  const poolEl = $('rearrangeHandPool');
+  poolEl.innerHTML = '';
+  state.handPool.forEach((cardId) => {
+    const cardEl = buildCardEl(cardById[cardId], { selected: cardId === rearrangeSelectedCardId, pickable: true });
+    cardEl.addEventListener('click', () => {
+      rearrangeSelectedCardId = rearrangeSelectedCardId === cardId ? null : cardId;
+      render();
+    });
+    poolEl.appendChild(cardEl);
+  });
+}
+
 function renderHand() {
   const el = $('hand');
   el.innerHTML = '';
   const r = game.round;
+  if (r.rearrange) return; // "Your hand, in the draft" (rearrangeHandPool) stands in for this during a session
   const hand = r.hands[0]; // human is always P1
 
   hand.forEach((card) => {
@@ -308,6 +381,7 @@ function renderHand() {
 function renderControls() {
   const r = game.round;
   const isHumanTurn = !game.gameOver && !r.ended && r.part !== 'turn0' && r.current === 0;
+  const rearranging = !!r.rearrange;
   const hand = r.hands[0];
   const selected = [...selectedHandCardIds].map((id) => hand.find((c) => c.id === id)).filter(Boolean);
   const comeOut = r.comeOut[0];
@@ -319,10 +393,12 @@ function renderControls() {
     ? 'Round over'
     : r.part === 'turn0'
     ? 'Turn 0 — starter exchange'
+    : rearranging
+    ? `Player ${r.current + 1}'s turn — rearranging the tableau (draft only, nothing final until committed)`
     : `Player ${r.current + 1}'s turn — Part ${r.part}${r.current === 0 ? comeOutProgress : ''}`;
 
   const obligEl = $('obligationLabel');
-  if (isHumanTurn && r.pendingObligations.length > 0) {
+  if (isHumanTurn && !rearranging && r.pendingObligations.length > 0) {
     obligEl.hidden = false;
     const names = r.pendingObligations.map((id) => {
       const c = hand.find((h) => h.id === id);
@@ -334,32 +410,43 @@ function renderControls() {
   }
 
   const selCountEl = $('selectionCount');
-  if (isHumanTurn && r.part === 2 && selected.length > 0) {
+  if (isHumanTurn && !rearranging && r.part === 2 && selected.length > 0) {
     selCountEl.hidden = false;
     selCountEl.textContent = `Selected: ${selected.map(cardText).join(', ')}`;
   } else {
     selCountEl.hidden = true;
   }
 
-  const targetedMeld = r.tableau.find((m) => m.id === targetedMeldId);
+  const targetedMeld = !rearranging && r.tableau.find((m) => m.id === targetedMeldId);
   const targetEl = $('targetIndicator');
-  if (isHumanTurn && r.part === 2 && targetedMeld) {
+  if (isHumanTurn && !rearranging && r.part === 2 && targetedMeld) {
     targetEl.hidden = false;
     targetEl.textContent = `Targeted meld: ${targetedMeld.slots.map((s) => cardText(s.card)).join(', ')}`;
   } else {
     targetEl.hidden = true;
   }
 
-  $('drawPileBtn').disabled = !(isHumanTurn && CascadeEngine.canDrawFromClosedPile(game));
-  $('finishDrawingBtn').disabled = !(isHumanTurn && CascadeEngine.canFinishDrawing(game));
-  $('undoDrawBtn').disabled = !(isHumanTurn && CascadeEngine.canUndoDraw(game));
-  $('clearSelectionBtn').disabled = !(isHumanTurn && (selected.length > 0 || targetedMeldId));
-  $('layMeldBtn').disabled = !(isHumanTurn && r.part === 2 && selected.length >= 3);
-  $('addToMeldBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedMeldId);
+  // Normal Part 1/2 controls are all off-limits while a rearrange session
+  // is open (the engine rejects them anyway — see the r.rearrange guards
+  // added alongside this feature — but disabling them here avoids a round
+  // trip through an error dialog for the obvious case).
+  $('drawPileBtn').disabled = rearranging || !(isHumanTurn && CascadeEngine.canDrawFromClosedPile(game));
+  $('finishDrawingBtn').disabled = rearranging || !(isHumanTurn && CascadeEngine.canFinishDrawing(game));
+  $('undoDrawBtn').disabled = rearranging || !(isHumanTurn && CascadeEngine.canUndoDraw(game));
+  $('clearSelectionBtn').disabled = rearranging || !(isHumanTurn && (selected.length > 0 || targetedMeldId));
+  $('layMeldBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && selected.length >= 3);
+  $('addToMeldBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedMeldId);
   const targetedHasJoker = targetedMeld && targetedMeld.slots.some((s) => s.card.rank === 'JOKER');
-  $('swapJokerBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedHasJoker);
-  $('pullMeldBtn').disabled = !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
-  $('discardBtn').disabled = !(isHumanTurn && r.part === 2 && r.pendingObligations.length === 0 && selected.length === 1);
+  $('swapJokerBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && comeOut && selected.length === 1 && targetedHasJoker);
+  $('pullMeldBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
+  $('discardBtn').disabled = rearranging || !(isHumanTurn && r.part === 2 && r.pendingObligations.length === 0 && selected.length === 1);
+  $('startRearrangeBtn').disabled = rearranging || !(isHumanTurn && CascadeEngine.canStartRearrange(game));
+
+  $('rearrangeControls').hidden = !rearranging;
+  if (rearranging) {
+    $('rearrangeNewGroupBtn').disabled = !rearrangeSelectedCardId;
+    $('rearrangeToHandBtn').disabled = !rearrangeSelectedCardId;
+  }
 }
 
 function renderLog() {
@@ -482,6 +569,61 @@ $('discardBtn').addEventListener('click', () => {
     selectedHandCardIds.clear();
     targetedMeldId = null;
     afterHumanAction();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
+$('startRearrangeBtn').addEventListener('click', () => {
+  try {
+    CascadeEngine.startRearrange(game);
+    selectedHandCardIds.clear();
+    targetedMeldId = null;
+    rearrangeSelectedCardId = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
+$('rearrangeNewGroupBtn').addEventListener('click', () => {
+  if (!rearrangeSelectedCardId) return;
+  try {
+    CascadeEngine.rearrangeMoveCard(game, rearrangeSelectedCardId, 'new');
+    rearrangeSelectedCardId = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
+$('rearrangeToHandBtn').addEventListener('click', () => {
+  if (!rearrangeSelectedCardId) return;
+  try {
+    CascadeEngine.rearrangeMoveCard(game, rearrangeSelectedCardId, 'hand');
+    rearrangeSelectedCardId = null;
+    render();
+  } catch (e) {
+    showError(e.message);
+  }
+});
+
+$('commitRearrangeBtn').addEventListener('click', () => {
+  const result = CascadeEngine.commitRearrange(game);
+  if (!result.ok) {
+    const lines = result.problems.map((p) => `• ${p.error}`).join('\n');
+    showError(`Can't commit yet:\n${lines}\n\nKeep adjusting, or use "Cancel rearrange" to give up and revert.`);
+    return;
+  }
+  rearrangeSelectedCardId = null;
+  afterHumanAction();
+});
+
+$('cancelRearrangeBtn').addEventListener('click', () => {
+  try {
+    CascadeEngine.cancelRearrange(game);
+    rearrangeSelectedCardId = null;
+    render();
   } catch (e) {
     showError(e.message);
   }
