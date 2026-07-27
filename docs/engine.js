@@ -786,6 +786,11 @@ const CascadeEngine = (() => {
   }
 
   function liveScore(game, playerIdx) {
+    // Once the round has ended, scoreRound() has already folded this
+    // round's meld points into game.scores — adding roundMeldPointsSoFar
+    // on top would double-count them (the tableau isn't cleared until
+    // "Next Round" actually starts a fresh round).
+    if (game.round.ended) return game.scores[playerIdx];
     return game.scores[playerIdx] + roundMeldPointsSoFar(game, playerIdx);
   }
 

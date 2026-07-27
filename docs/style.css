@@ -134,6 +134,8 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
 }
 .card.red { color: var(--red); }
 .card.joker { background: #e9dfc4; }
+.card .rank { font-size: 0.85em; line-height: 1.1; }
+.card .suit { font-size: 1.5em; line-height: 1; }
 .card.owner-1 { outline: 2px solid #6fbf73; outline-offset: -2px; }
 .card.owner-2 { outline: 2px solid #6f9fbf; outline-offset: -2px; }
 

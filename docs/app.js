@@ -30,9 +30,25 @@ function buildCardEl(card, opts = {}) {
   if (opts.ownerId !== undefined && opts.ownerId !== null) el.classList.add(`owner-${opts.ownerId + 1}`);
   if (opts.selected) el.classList.add('selected');
   if (opts.pickable) el.classList.add('pickable');
-  let label = cardText(card);
-  if (opts.wildAs) label = `J→${opts.wildAs.rank}${opts.wildAs.suit ? SUIT_SYMBOL[opts.wildAs.suit] : ''}`;
-  el.textContent = label;
+
+  if (opts.wildAs) {
+    el.textContent = `J→${opts.wildAs.rank}${opts.wildAs.suit ? SUIT_SYMBOL[opts.wildAs.suit] : ''}`;
+  } else if (card.rank === 'JOKER') {
+    el.textContent = 'JOKER';
+  } else {
+    // Rank and suit as separate elements (not one text string) so the
+    // suit symbol can be sized up independently — at the original size,
+    // black suits especially (♠ vs ♣, no color to tell them apart) were
+    // hard to distinguish in a long, busy open row.
+    const rankSpan = document.createElement('span');
+    rankSpan.className = 'rank';
+    rankSpan.textContent = card.rank;
+    const suitSpan = document.createElement('span');
+    suitSpan.className = 'suit';
+    suitSpan.textContent = SUIT_SYMBOL[card.suit];
+    el.append(rankSpan, suitSpan);
+  }
+
   if (opts.onClick) el.addEventListener('click', opts.onClick);
   return el;
 }

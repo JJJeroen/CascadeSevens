@@ -183,6 +183,34 @@ a run, matching visual left-to-right sequence order.
   unaffected by the reposition — only the newly added card gets newly
   credited.
 
+**Eighth playtest round (2026-07-27)** — three more from live play:
+- **Real bug: score display double-counted meld points after a round
+  ended.** `liveScore()` = persisted total + this round's meld points so
+  far — but once a round ends, `scoreRound()` already folds that round's
+  meld points into the persisted total, and the tableau isn't cleared
+  until "Next Round" actually starts fresh. So the running-total addition
+  was counting the same points a second time, e.g. a round scored "P1 130,
+  P2 100" displayed as "P1 290, P2 150" at the top. Fixed: `liveScore()`
+  just returns the persisted total directly once `round.ended`.
+- **AI heuristic was much weaker than it looked**: `pickDraw` only ever
+  evaluated `openRow[0]` — the single oldest card — so a great pickup
+  sitting a few cards deep in the row (reported case: a same-suit run
+  buried under unrelated cards) was never even considered, no matter how
+  useful, and anything requiring a scoop bigger than 2 cards was ruled out
+  before checking value at all. Rewrote to scan every position in the row,
+  keeping only resolvable candidates (still gated by `canResolvePickup`, so
+  it can't strand itself) and preferring cheaper/more valuable scoops over
+  bigger, clutter-dumping ones. This also exposed a second bug in the old
+  code's cheap pre-filter (checking only the hand, before the real
+  resolvability check) — it wrongly rejected scoops that were already
+  self-sufficient (e.g. 3♦-4♦-5♦ needs nothing from hand at all) — removed
+  in favor of relying on `canResolvePickup` alone.
+- **Suit symbols were hard to read**, especially spades vs. clubs (both
+  black, no color to help, and small at the original size) in a long open
+  row. Rank and suit are now separate, independently-styled elements (the
+  suit symbol noticeably larger, stacked below the rank) instead of one
+  plain text string.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker

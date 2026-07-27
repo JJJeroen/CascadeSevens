@@ -96,17 +96,35 @@ const CascadeAI = (() => {
     );
   }
 
+  // Scans every position in the open row, not just the very oldest card —
+  // r.openRow[0] alone (the original approach) means the AI could never
+  // even consider a great pickup sitting a few cards deep, no matter how
+  // useful, which read as "the AI is dumb" in testing and was a fair call.
+  // Each candidate still has to pass canResolvePickup (so the AI never
+  // strands itself the way a human ignoring the warning could), and among
+  // resolvable candidates this prefers a cheap, useful scoop over a huge
+  // one that dumps a lot of extra "junk" cards into hand at once.
   function pickDraw(game) {
     const r = game.round;
     const E_ = E();
     if (!E_.canDrawFromRow(game)) return { source: 'closed' };
-    const bottom = r.openRow[0];
-    const scoopSize = r.openRow.length;
     const hand = r.hands[r.current];
-    const wouldHelp = hand.some((c) => c.rank === bottom.rank || c.suit === bottom.suit);
-    if (scoopSize > 2 || !wouldHelp) return { source: 'closed' };
-    if (!canResolvePickup(hand, r.openRow, bottom.id)) return { source: 'closed' };
-    return { source: 'row', cardId: bottom.id };
+    let best = null;
+    for (let idx = 0; idx < r.openRow.length; idx++) {
+      const bottom = r.openRow[idx];
+      const scoop = r.openRow.slice(idx);
+      // No cheap pre-filter here on purpose: a scoop can be entirely
+      // self-sufficient (e.g. 3D,4D,5D is already a complete run on its
+      // own), so checking the hand alone before calling canResolvePickup
+      // would wrongly reject perfectly good pickups the hand contributes
+      // nothing to.
+      if (!canResolvePickup(hand, scoop, bottom.id)) continue;
+      const scoopValue = scoop.reduce((s, c) => s + E_.pointValue(c.rank), 0);
+      const score = scoopValue - (scoop.length - 1) * 5; // mild penalty for extra clutter cards
+      if (!best || score > best.score) best = { cardId: bottom.id, score };
+    }
+    if (!best) return { source: 'closed' };
+    return { source: 'row', cardId: best.cardId };
   }
 
   function playPart2(game) {
