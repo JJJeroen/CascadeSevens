@@ -356,6 +356,21 @@ reading and testing the actual code rather than trusting this file's own
   shown/hidden element is introduced — the mechanism that let it recur
   once already.
 
+**Thirteenth playtest round (2026-07-27)** — visibility fix: rank/suit
+were centered on every card, which worked fine for an isolated card but
+meant a buried card in the open row (each card overlaps the next one's
+left ~30px, per `.open-row .card { margin-left: -30px; }`) had its
+identifying text hidden under the card on top of it — you couldn't tell
+what was actually stacked in the row without scooping it. Moved rank/suit
+to the top-left corner (`justify-content`/`align-items: flex-start` +
+padding on `.card`, matching a real card's corner index) instead of
+centered, since the open row's overlap always covers a card's *right*
+side, never its left — so the identifying text now stays in the strip
+that's always visible, on every card in the row, not just the top one.
+Applies everywhere (hands, tableau, open row) for visual consistency, not
+just the row. Confirmed via a real-browser screenshot with a 9-card
+overlapping open row — every card's rank/suit legible.
+
 ## Known simplifications (mock, not final spec)
 
 - **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker
