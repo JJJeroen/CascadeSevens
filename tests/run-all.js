@@ -1,7 +1,7 @@
-// Runs every rules_check*.js unit test file plus both headless AI-vs-AI
-// simulations, in order, and reports a single pass/fail summary. This is
-// the committed regression net for the engine (docs/engine.js) and AI
-// (docs/ai.js) -- run it after any change to either file.
+// Runs every rules_check*.js unit test file plus every headless sim_*.js
+// simulation/fuzz harness, in order, and reports a single pass/fail summary.
+// This is the committed regression net for the engine (docs/engine.js) and
+// AI (docs/ai.js) -- run it after any change to either file.
 //
 // Usage: node tests/run-all.js   (from anywhere; paths are __dirname-relative)
 
@@ -12,14 +12,13 @@ const { execFileSync } = require('child_process');
 const dir = __dirname;
 const files = fs
   .readdirSync(dir)
-  .filter((f) => /^(rules_check\d+|sim2|sim_stress)\.js$/.test(f))
+  .filter((f) => /^(rules_check\d+|sim[\w-]*)\.js$/.test(f))
   .sort((a, b) => {
-    // rules_check2..13 in numeric order, then the two simulations last.
-    const na = a.match(/\d+/);
-    const nb = b.match(/\d+/);
-    if (na && nb) return Number(na[0]) - Number(nb[0]);
-    if (na) return -1;
-    if (nb) return 1;
+    // rules_check2..N in numeric order, then any sim*.js files last (alphabetically).
+    const aIsSim = a.startsWith('sim');
+    const bIsSim = b.startsWith('sim');
+    if (aIsSim !== bIsSim) return aIsSim ? 1 : -1;
+    if (!aIsSim) return Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]);
     return a.localeCompare(b);
   });
 
