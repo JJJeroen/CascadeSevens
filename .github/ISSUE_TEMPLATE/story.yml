@@ -1,0 +1,39 @@
+name: User story
+description: A player-facing capability or a confirmed rule behavior
+title: "[Story]: "
+labels: ["type:story"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most stories in this project start as playtest feedback, not upfront specs — that's fine, just capture where it came from below.
+  - type: input
+    id: origin
+    attributes:
+      label: Origin
+      description: Where this came from — design review, a playtest session, or a designer (Tommer) confirmation.
+      placeholder: e.g. "Playtest 2026-08-20, confirmed with Tommer"
+  - type: input
+    id: rule-link
+    attributes:
+      label: DESIGN.md section / decision #
+      description: If this maps to a rule, link the section or decision number it affects.
+      placeholder: e.g. "§2.5 / decision 17"
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Plain statement of the capability or behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: 2-3 checkable bullets — this is what lets the other person close the issue without re-reading the discussion that produced it.
+      value: |
+        - [ ]
+        - [ ]
+        - [ ]
+    validations:
+      required: true
