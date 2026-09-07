@@ -31,13 +31,18 @@ node tests/run-all.js
 ```
 
 This runs all `rules_check*.js` targeted unit tests (one file per feature
-area — Turn 0, joker repositioning, rearrange sessions, ownership, etc.)
-plus two headless AI-vs-AI simulations (`sim2.js`: 300 games, `sim_stress.js`:
-1000 games) that check for turn stalls and card-conservation violations.
-Exits non-zero if anything fails. Run it after any change to `engine.js` or
-`ai.js` — this is the actual regression net referenced throughout the
-playtest-round entries below, not just a description of testing that
-happened once in a chat session.
+area — Turn 0, joker repositioning, rearrange sessions, ownership, round/
+game-end scoring, four-of-a-kind come-out, etc.) plus every `sim_*.js`
+headless simulation/fuzz harness: `sim2.js`/`sim_stress.js` (AI-vs-AI games,
+checking for turn stalls and card-conservation violations), `sim_turn0.js`
+(Turn 0 acceptance under randomized play — `ai.js`'s own heuristic always
+declines it, so this is the only place those paths run at simulation scale),
+and `sim_rearrange.js` (property-based fuzzing of tableau-rearrange commits,
+checking card conservation and ownership invariants independent of whether
+the AI ever chooses to rearrange). Exits non-zero if anything fails. Run it
+after any change to `engine.js` or `ai.js` — this is the actual regression
+net referenced throughout the playtest-round entries below, not just a
+description of testing that happened once in a chat session.
 
 ## What's implemented
 
