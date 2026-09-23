@@ -161,6 +161,8 @@ These were unspecified in the original rules and were decided explicitly, since 
 
 Build the **rules engine as a pure, deterministic, framework-agnostic module** (TypeScript) that has no concept of "human" vs. "AI" vs. "network peer" — only "player 1" and "player 2," each driven by an adapter. This is the one decision that's expensive to reverse later, so it's made up front even though multiplayer is out of scope for v1.
 
+**Status (2026-09-23, resolves #9):** the current `docs/engine.js`/`ai.js`/`app.js` are plain JS using a `window.CascadeEngine` global-object pattern (with a `global.window = global` shim to fake a browser in tests), diverging from the TypeScript commitment above. Decision: **reaffirm TypeScript** — the actual migration is scoped as its own follow-up issue rather than done inline here, since it's real effort (converting three files plus the 24-file test suite, adding a build step). That follow-up should also replace the `window.X` global pattern with real `module.exports`/`require` (or ES module) exports — React Native has no `window` global by default, so that part is a hard blocker for the Expo phase (§5.2) independent of the TS decision, and it touches the same files, so it belongs in the same pass.
+
 Engine responsibilities (fully unit-testable in isolation, independent of any UI):
 - Deck construction, shuffle, deal.
 - Turn state machine (Part 1 → Part 2 → Part 3, enforcing legality at each step).
