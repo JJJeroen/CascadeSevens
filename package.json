@@ -1,0 +1,19 @@
+{
+  "name": "cascade-sevens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cascade Break (working title) — a 2-player Rummy-family card game with a shared open-row pickup mechanic. Web rules-mock prototype; see DESIGN.md.",
+  "homepage": "https://jjjeroen.github.io/CascadeSevens/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JJJeroen/CascadeSevens.git"
+  },
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node tests/run-all.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
