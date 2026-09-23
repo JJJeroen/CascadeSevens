@@ -1,0 +1,12 @@
+name: Technical task / chore
+description: Non-player-facing engineering or infra task
+title: "[Chore]: "
+labels: ["type:chore"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: Plain description of what should exist when this is done.
+    validations:
+      required: true
