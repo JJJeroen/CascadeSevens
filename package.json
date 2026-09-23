@@ -8,7 +8,7 @@
     "type": "git",
     "url": "git+https://github.com/JJJeroen/CascadeSevens.git"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "commonjs",
   "scripts": {
     "test": "node tests/run-all.js"
