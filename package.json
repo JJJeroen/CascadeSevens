@@ -11,9 +11,18 @@
   "license": "UNLICENSED",
   "type": "commonjs",
   "scripts": {
-    "test": "node tests/run-all.js"
+    "test": "node tests/run-all.js",
+    "lint": "eslint . && prettier --check \"docs/**/*.{js,css,html}\" \"tests/**/*.js\"",
+    "lint:fix": "eslint . --fix && prettier --write \"docs/**/*.{js,css,html}\" \"tests/**/*.js\""
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9"
   }
 }

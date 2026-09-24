@@ -12,19 +12,25 @@
 // exactly as it would in production, just starting from a Turn-0-resolved
 // state the real AI itself never produces on its own.
 global.window = global;
-require('../docs/engine.js');
-require('../docs/ai.js');
+require("../docs/engine.js");
+require("../docs/ai.js");
 const E = CascadeEngine;
 
 function seededRng(seed) {
   let s = seed;
-  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
 }
 
 function resolveTurn0Randomly(game, rng) {
   const r = game.round;
   const askee = E.turn0CurrentAskee(game);
-  if (askee === null) { E.turn0Decline(game); return; } // shouldn't happen, but never hang
+  if (askee === null) {
+    E.turn0Decline(game);
+    return;
+  } // shouldn't happen, but never hang
   if (rng() < 0.5) {
     const hand = r.hands[askee];
     const replacement = hand[Math.floor(rng() * hand.length)];
@@ -40,7 +46,7 @@ const GAMES = 1000;
 
 for (let g = 0; g < GAMES; g++) {
   const rng = seededRng(g * 104729 + 12345);
-  const game = E.newGame(g % 2 === 0 ? 'quick' : 'standard', rng);
+  const game = E.newGame(g % 2 === 0 ? "quick" : "standard", rng);
   let safety = 0;
   while (!game.gameOver && safety < 30) {
     safety++;
@@ -49,24 +55,42 @@ for (let g = 0; g < GAMES; g++) {
     let turns = 0;
     while (!game.round.ended && turns < 500) {
       turns++;
-      if (game.round.part === 'turn0') {
+      if (game.round.part === "turn0") {
         const before = game.round.turn0.lastAcceptor;
         resolveTurn0Randomly(game, rng);
-        if (game.round.turn0.lastAcceptor !== before && game.round.turn0.lastAcceptor !== null) turn0Accepts++;
+        if (
+          game.round.turn0.lastAcceptor !== before &&
+          game.round.turn0.lastAcceptor !== null
+        )
+          turn0Accepts++;
       } else {
         CascadeAI.takeTurn(game, { onStateChanged: () => {} });
       }
     }
-    if (turns >= 500) { console.log(`GAME ${g}: STALL`); process.exit(1); }
+    if (turns >= 500) {
+      console.log(`GAME ${g}: STALL`);
+      process.exit(1);
+    }
     const r = game.round;
-    let count = r.closedPile.length + r.openRow.length + r.hands[0].length + r.hands[1].length;
+    let count =
+      r.closedPile.length +
+      r.openRow.length +
+      r.hands[0].length +
+      r.hands[1].length;
     for (const m of r.tableau) count += m.slots.length;
-    if (count !== 54) { console.log(`GAME ${g}: card conservation FAILED (${count})`); process.exit(1); }
+    if (count !== 54) {
+      console.log(`GAME ${g}: card conservation FAILED (${count})`);
+      process.exit(1);
+    }
   }
 }
 
 if (turn0Accepts === 0) {
-  console.log('FAIL: Turn 0 was never actually accepted across 1000 games -- the harness itself is broken, not just unlucky.');
+  console.log(
+    "FAIL: Turn 0 was never actually accepted across 1000 games -- the harness itself is broken, not just unlucky.",
+  );
   process.exit(1);
 }
-console.log(`OK: ${totalRounds} rounds across ${GAMES} games, ${turn0Accepts} Turn-0 acceptances exercised, no stalls, card conservation held.`);
+console.log(
+  `OK: ${totalRounds} rounds across ${GAMES} games, ${turn0Accepts} Turn-0 acceptances exercised, no stalls, card conservation held.`,
+);

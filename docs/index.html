@@ -1,87 +1,119 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Cascade Sevens — Rules Mock</title>
-<link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <header class="topbar">
-    <h1>Cascade Sevens <span class="subtitle">rules/functionality mock</span></h1>
-    <div class="topbar-controls">
-      <label>Mode:
-        <select id="modeSelect">
-          <option value="standard">Standard (&gt;1000)</option>
-          <option value="quick">Quick (&gt;300)</option>
-        </select>
-      </label>
-      <button id="newGameBtn">New Game</button>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cascade Sevens — Rules Mock</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>
+        Cascade Sevens <span class="subtitle">rules/functionality mock</span>
+      </h1>
+      <div class="topbar-controls">
+        <label
+          >Mode:
+          <select id="modeSelect">
+            <option value="standard">Standard (&gt;1000)</option>
+            <option value="quick">Quick (&gt;300)</option>
+          </select>
+        </label>
+        <button id="newGameBtn">New Game</button>
+      </div>
+    </header>
+
+    <div class="scoreboard">
+      <div class="score-box you">You (P1) <span id="scoreP1">0</span></div>
+      <div class="round-info">
+        Round <span id="roundNum">0</span> · Pile: <span id="pileCount">0</span>
+      </div>
+      <div class="score-box ai">AI (P2) <span id="scoreP2">0</span></div>
     </div>
-  </header>
 
-  <div class="scoreboard">
-    <div class="score-box you">You (P1) <span id="scoreP1">0</span></div>
-    <div class="round-info">Round <span id="roundNum">0</span> · Pile: <span id="pileCount">0</span></div>
-    <div class="score-box ai">AI (P2) <span id="scoreP2">0</span></div>
-  </div>
+    <main id="banner" class="banner" hidden></main>
 
-  <main id="banner" class="banner" hidden></main>
+    <section class="ai-hand-area">
+      <h2>
+        AI hand
+        <span class="hint"
+          >(debug view for testing — not part of the real game, the AI's cards
+          would normally be hidden)</span
+        >
+      </h2>
+      <div id="aiHand" class="hand"></div>
+    </section>
 
-  <section class="ai-hand-area">
-    <h2>AI hand <span class="hint">(debug view for testing — not part of the real game, the AI's cards would normally be hidden)</span></h2>
-    <div id="aiHand" class="hand"></div>
-  </section>
+    <section class="table">
+      <h2>
+        Open Row
+        <span class="hint"
+          >(click a card to scoop it + everything on top — the bottom one must
+          be melded this turn; repeatable in Part 1, but locks out the closed
+          pile for this turn)</span
+        >
+      </h2>
+      <div id="openRow" class="open-row"></div>
 
-  <section class="table">
-    <h2>Open Row <span class="hint">(click a card to scoop it + everything on top — the bottom one must be melded this turn; repeatable in Part 1, but locks out the closed pile for this turn)</span></h2>
-    <div id="openRow" class="open-row"></div>
+      <h2>
+        Tableau
+        <span id="tableauHint" class="hint"
+          >(shared — click a meld's border to target it for
+          Add/Swap/Pull-entire; click a card inside it to pull just that card,
+          once you've come out)</span
+        >
+      </h2>
+      <div id="tableau" class="tableau"></div>
+      <div id="rearrangeHandPoolWrap" hidden>
+        <h2>
+          Your hand, in the draft
+          <span class="hint"
+            >(click a card, then click a group below to move it there)</span
+          >
+        </h2>
+        <div id="rearrangeHandPool" class="open-row"></div>
+      </div>
+      <div id="rearrangeControls" class="controls" hidden>
+        <button id="rearrangeNewGroupBtn">Move selected to a new group</button>
+        <button id="rearrangeToHandBtn">Move selected to hand</button>
+        <button id="commitRearrangeBtn">Commit rearrange</button>
+        <button id="cancelRearrangeBtn">Cancel rearrange</button>
+      </div>
+    </section>
 
-    <h2>Tableau <span id="tableauHint" class="hint">(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)</span></h2>
-    <div id="tableau" class="tableau"></div>
-    <div id="rearrangeHandPoolWrap" hidden>
-      <h2>Your hand, in the draft <span class="hint">(click a card, then click a group below to move it there)</span></h2>
-      <div id="rearrangeHandPool" class="open-row"></div>
-    </div>
-    <div id="rearrangeControls" class="controls" hidden>
-      <button id="rearrangeNewGroupBtn">Move selected to a new group</button>
-      <button id="rearrangeToHandBtn">Move selected to hand</button>
-      <button id="commitRearrangeBtn">Commit rearrange</button>
-      <button id="cancelRearrangeBtn">Cancel rearrange</button>
-    </div>
-  </section>
+    <section class="hand-area">
+      <div class="hand-header">
+        <span id="turnLabel">—</span>
+        <span id="obligationLabel" class="obligation" hidden></span>
+        <span id="selectionCount" class="selection-count" hidden></span>
+        <span id="targetIndicator" class="selection-count" hidden></span>
+      </div>
+      <div id="hand" class="hand"></div>
+      <div class="controls">
+        <button id="drawPileBtn">Draw closed pile</button>
+        <button id="finishDrawingBtn">Done drawing → Part 2</button>
+        <button id="undoDrawBtn">Undo pickup</button>
+        <button id="clearSelectionBtn">Clear selection &amp; target</button>
+        <button id="layMeldBtn">Lay new meld from selected</button>
+        <button id="addToMeldBtn">Add selected card to targeted meld</button>
+        <button id="swapJokerBtn">Swap targeted joker for selected card</button>
+        <button id="pullMeldBtn">
+          Pull my cards from targeted meld back to hand
+        </button>
+        <button id="startRearrangeBtn">Rearrange tableau…</button>
+        <button id="discardBtn">Discard selected</button>
+      </div>
+    </section>
 
-  <section class="hand-area">
-    <div class="hand-header">
-      <span id="turnLabel">—</span>
-      <span id="obligationLabel" class="obligation" hidden></span>
-      <span id="selectionCount" class="selection-count" hidden></span>
-      <span id="targetIndicator" class="selection-count" hidden></span>
-    </div>
-    <div id="hand" class="hand"></div>
-    <div class="controls">
-      <button id="drawPileBtn">Draw closed pile</button>
-      <button id="finishDrawingBtn">Done drawing → Part 2</button>
-      <button id="undoDrawBtn">Undo pickup</button>
-      <button id="clearSelectionBtn">Clear selection &amp; target</button>
-      <button id="layMeldBtn">Lay new meld from selected</button>
-      <button id="addToMeldBtn">Add selected card to targeted meld</button>
-      <button id="swapJokerBtn">Swap targeted joker for selected card</button>
-      <button id="pullMeldBtn">Pull my cards from targeted meld back to hand</button>
-      <button id="startRearrangeBtn">Rearrange tableau…</button>
-      <button id="discardBtn">Discard selected</button>
-    </div>
-  </section>
+    <section class="log-panel">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </section>
 
-  <section class="log-panel">
-    <h2>Log</h2>
-    <div id="log"></div>
-  </section>
+    <div id="modalRoot" class="modal-root" hidden></div>
 
-  <div id="modalRoot" class="modal-root" hidden></div>
-
-  <script src="engine.js"></script>
-  <script src="ai.js"></script>
-  <script src="app.js"></script>
-</body>
+    <script src="engine.js"></script>
+    <script src="ai.js"></script>
+    <script src="app.js"></script>
+  </body>
 </html>
