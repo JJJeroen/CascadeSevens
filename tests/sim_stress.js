@@ -1,6 +1,5 @@
-global.window = global;
-require("../docs/engine.js");
-require("../docs/ai.js");
+import { CascadeEngine } from "../docs/engine.js";
+import { CascadeAI } from "../docs/ai.js";
 function seededRng(seed) {
   let s = seed;
   return () => {

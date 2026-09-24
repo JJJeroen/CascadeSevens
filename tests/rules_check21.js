@@ -8,8 +8,7 @@
 // pinned down by a test, not left to be discovered by accident if it ever
 // silently changes. If this ever becomes an intentional engine-level guard
 // instead, THIS test is the one that should need updating.
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };

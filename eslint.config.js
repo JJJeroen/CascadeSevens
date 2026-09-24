@@ -1,15 +1,8 @@
-"use strict";
+import js from "@eslint/js";
+import globals from "globals";
+import prettierConfig from "eslint-config-prettier";
 
-const js = require("@eslint/js");
-const globals = require("globals");
-const prettierConfig = require("eslint-config-prettier");
-
-const cascadeGlobals = {
-  CascadeEngine: "readonly",
-  CascadeAI: "readonly",
-};
-
-module.exports = [
+export default [
   js.configs.recommended,
   {
     rules: {
@@ -17,38 +10,18 @@ module.exports = [
     },
   },
   {
-    files: ["eslint.config.js"],
-    languageOptions: {
-      sourceType: "commonjs",
-      globals: globals.node,
-    },
-  },
-  {
-    files: ["docs/**/*.js"],
-    languageOptions: {
-      sourceType: "script",
-      globals: globals.browser,
-    },
-  },
-  {
-    // engine.js/ai.js declare CascadeEngine/CascadeAI themselves (and
-    // reference each other, where needed, via window.X); only app.js
-    // consumes both as bare globals.
-    files: ["docs/app.js"],
-    languageOptions: {
-      sourceType: "script",
-      globals: { ...globals.browser, ...cascadeGlobals },
-    },
-  },
-  {
+    // Only tests/**/*.js is plain, hand-written JS ESLint can parse. docs/*.js
+    // is tsc-generated output (typed and gated by `tsc` itself, not linted as
+    // source); src/**/*.ts is TypeScript, which the default parser can't read
+    // — its safety net is the compiler, not ESLint.
     files: ["tests/**/*.js"],
     languageOptions: {
-      sourceType: "commonjs",
-      globals: { ...globals.node, ...cascadeGlobals },
+      sourceType: "module",
+      globals: globals.node,
     },
   },
   prettierConfig,
   {
-    ignores: ["node_modules/"],
+    ignores: ["node_modules/", "docs/*.js"],
   },
 ];

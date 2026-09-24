@@ -15,5 +15,8 @@ jobs:
         with:
           node-version: '18'
       - run: npm ci
+      - run: npm run build
+      - name: Check committed docs/ output is up to date with src/
+        run: git diff --exit-code -- docs/*.js
       - run: npm run lint
       - run: npm test

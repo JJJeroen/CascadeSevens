@@ -4,8 +4,7 @@
 // penalized for their own remaining hand, not just a "loser." Confirmed by
 // grep before writing this file: zero references to endRoundPileEmpty or
 // this scoring path existed anywhere in the test suite.
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };

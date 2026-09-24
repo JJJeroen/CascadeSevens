@@ -8,8 +8,7 @@
 //
 // This exercises the engine directly and is independent of whether
 // docs/ai.js's heuristic ever chooses to rearrange (it doesn't, today).
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 
 function seededRng(seed) {

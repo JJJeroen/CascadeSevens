@@ -9,11 +9,13 @@
     "url": "git+https://github.com/JJJeroen/CascadeSevens.git"
   },
   "license": "MIT",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
+    "build": "tsc",
+    "pretest": "npm run build",
     "test": "node tests/run-all.js",
-    "lint": "eslint . && prettier --check \"docs/**/*.{js,css,html}\" \"tests/**/*.js\"",
-    "lint:fix": "eslint . --fix && prettier --write \"docs/**/*.{js,css,html}\" \"tests/**/*.js\""
+    "lint": "eslint . && prettier --check \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\"",
+    "lint:fix": "eslint . --fix && prettier --write \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\""
   },
   "engines": {
     "node": ">=18"
@@ -23,6 +25,7 @@
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",
-    "prettier": "^3.9.9"
+    "prettier": "^3.9.9",
+    "typescript": "^7.0.2"
   }
 }

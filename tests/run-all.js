@@ -5,11 +5,12 @@
 //
 // Usage: node tests/run-all.js   (from anywhere; paths are __dirname-relative)
 
-const fs = require("fs");
-const path = require("path");
-const { execFileSync } = require("child_process");
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const dir = __dirname;
+const dir = path.dirname(fileURLToPath(import.meta.url));
 const files = fs
   .readdirSync(dir)
   .filter((f) => /^(rules_check\d+|sim[\w-]*)\.js$/.test(f))

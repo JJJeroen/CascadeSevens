@@ -5,8 +5,7 @@
 // which was about NOT resetting something that should reset PER TURN. This
 // is the opposite direction: confirming round-scoped fields DO reset, while
 // game-scoped fields (game.scores, game.roundNumber) correctly do NOT.
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };

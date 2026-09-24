@@ -11,9 +11,8 @@
 // the turn to the real AI as normal -- so every subsequent turn plays out
 // exactly as it would in production, just starting from a Turn-0-resolved
 // state the real AI itself never produces on its own.
-global.window = global;
-require("../docs/engine.js");
-require("../docs/ai.js");
+import { CascadeEngine } from "../docs/engine.js";
+import { CascadeAI } from "../docs/ai.js";
 const E = CascadeEngine;
 
 function seededRng(seed) {

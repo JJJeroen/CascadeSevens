@@ -1,6 +1,5 @@
-global.window = global;
-require("../docs/engine.js");
-require("../docs/ai.js");
+import { CascadeEngine } from "../docs/engine.js";
+import { CascadeAI } from "../docs/ai.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };
