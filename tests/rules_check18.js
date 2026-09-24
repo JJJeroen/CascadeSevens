@@ -6,8 +6,7 @@
 // off-by-one -- which is exactly why the existing simulations never caught
 // anything here: they only ever check for stalls and card conservation,
 // never whether checkGameEnd's own boundary logic is correct.
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };

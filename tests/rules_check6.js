@@ -1,5 +1,4 @@
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };

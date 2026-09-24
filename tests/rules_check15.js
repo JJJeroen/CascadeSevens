@@ -5,8 +5,7 @@
 // penalty), which nothing in the existing suite verified: the simulations
 // reach this path constantly but only ever check for stalls and card
 // conservation, never that the declared winner or score is correct.
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };

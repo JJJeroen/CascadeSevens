@@ -5,8 +5,7 @@
 // by grep before writing this file: zero matches for "fourOfAKind" (or any
 // equivalent) existed anywhere in tests/ -- this named rule had no coverage
 // at all.
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };

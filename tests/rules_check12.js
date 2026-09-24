@@ -1,5 +1,4 @@
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 
 let failures = 0;

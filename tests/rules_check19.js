@@ -3,8 +3,7 @@
 // already-adjacent pair, which was the specific bug fixed 2026-07-27), and
 // the 13-card span ceiling solveRun explicitly guards (`totalSize > 13`)
 // but nothing previously exercised.
-global.window = global;
-require("../docs/engine.js");
+import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
   return { id: `${rank}${suit || ""}`, rank, suit: suit || null };
