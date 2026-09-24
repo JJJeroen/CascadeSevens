@@ -9,16 +9,33 @@
 // This exercises the engine directly and is independent of whether
 // docs/ai.js's heuristic ever chooses to rearrange (it doesn't, today).
 global.window = global;
-require('../docs/engine.js');
+require("../docs/engine.js");
 const E = CascadeEngine;
 
 function seededRng(seed) {
   let s = seed;
-  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
 }
 
-const SUITS = ['S', 'H', 'D', 'C'];
-const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const SUITS = ["S", "H", "D", "C"];
+const RANKS = [
+  "A",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "J",
+  "Q",
+  "K",
+];
 
 // Builds a synthetic (game, currentPlayer) with a random tableau of 1-3
 // valid melds (mixed real ownership per slot) plus a random hand for the
@@ -26,7 +43,9 @@ const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
 // card ids so the whole state is internally consistent.
 function makeRandomState(rng) {
   const used = new Set();
-  function pick(arr) { return arr[Math.floor(rng() * arr.length)]; }
+  function pick(arr) {
+    return arr[Math.floor(rng() * arr.length)];
+  }
   function realCard(rank, suit) {
     const id = `${rank}${suit}`;
     if (used.has(id)) return null;
@@ -71,8 +90,12 @@ function makeRandomState(rng) {
     const isRun = rng() < 0.5;
     const cards = isRun ? randomRun() : randomSet();
     if (!cards) continue;
-    const slots = cards.map((c) => ({ card: c, ownerId: rng() < 0.5 ? 0 : 1, wildAs: null }));
-    tableau.push({ id: `m${i}`, type: isRun ? 'run' : 'set', slots });
+    const slots = cards.map((c) => ({
+      card: c,
+      ownerId: rng() < 0.5 ? 0 : 1,
+      wildAs: null,
+    }));
+    tableau.push({ id: `m${i}`, type: isRun ? "run" : "set", slots });
   }
 
   const current = rng() < 0.5 ? 0 : 1;
@@ -81,30 +104,48 @@ function makeRandomState(rng) {
   for (let i = 0; i < handSize; i++) {
     for (let attempt = 0; attempt < 25; attempt++) {
       const c = realCard(pick(RANKS), pick(SUITS));
-      if (c) { hand.push(c); break; }
+      if (c) {
+        hand.push(c);
+        break;
+      }
     }
   }
 
-  const game = { scores: [0, 0], gameOver: false, round: {
-    tableau, hands: current === 0 ? [hand, []] : [[], hand],
-    comeOut: [true, true], part: 2, pendingObligations: [], rowObligationCardId: null,
-    rearrange: null, current, log: [],
-  } };
+  const game = {
+    scores: [0, 0],
+    gameOver: false,
+    round: {
+      tableau,
+      hands: current === 0 ? [hand, []] : [[], hand],
+      comeOut: [true, true],
+      part: 2,
+      pendingObligations: [],
+      rowObligationCardId: null,
+      rearrange: null,
+      current,
+      log: [],
+    },
+  };
   return game;
 }
 
 function snapshotCardOwners(game) {
   const r = game.round;
   const owners = {};
-  for (const m of r.tableau) for (const s of m.slots) owners[s.card.id] = s.ownerId;
+  for (const m of r.tableau)
+    for (const s of m.slots) owners[s.card.id] = s.ownerId;
   for (const c of r.hands[r.current]) owners[c.id] = r.current;
   return owners;
 }
 
-function deepClone(x) { return JSON.parse(JSON.stringify(x)); }
+function deepClone(x) {
+  return JSON.parse(JSON.stringify(x));
+}
 
 const TRIALS = 3000;
-let commits = 0, cancels = 0, blockedCommits = 0;
+let commits = 0,
+  cancels = 0,
+  blockedCommits = 0;
 
 for (let t = 0; t < TRIALS; t++) {
   const rng = seededRng(t * 7919 + 31);
@@ -113,13 +154,18 @@ for (let t = 0; t < TRIALS; t++) {
   const before = snapshotCardOwners(game);
   const beforeCardCount = Object.keys(before).length;
 
-  if (!E.canStartRearrange(game)) { continue; } // e.g. degenerate 0-meld/0-hand draw, just skip
+  if (!E.canStartRearrange(game)) {
+    continue;
+  } // e.g. degenerate 0-meld/0-hand draw, just skip
   E.startRearrange(game);
 
   const moves = 3 + Math.floor(rng() * 6);
   for (let m = 0; m < moves; m++) {
     const state = E.rearrangeState(game);
-    const allIds = [...state.handPool, ...state.groups.flatMap((g) => g.cardIds)];
+    const allIds = [
+      ...state.handPool,
+      ...state.groups.flatMap((g) => g.cardIds),
+    ];
     if (allIds.length === 0) break;
     const cardId = allIds[Math.floor(rng() * allIds.length)];
     // A group that currently holds only this one card would be deleted (now
@@ -128,14 +174,22 @@ for (let t = 0; t < TRIALS; t++) {
     // offer this as a choice; exclude it here rather than treat the engine's
     // resulting error as a rearrange-invariant failure.
     const currentGroup = state.groups.find((g) => g.cardIds.includes(cardId));
-    const selfSingleton = currentGroup && currentGroup.cardIds.length === 1 ? currentGroup.groupId : null;
-    const eligibleGroups = state.groups.filter((g) => g.groupId !== selfSingleton);
+    const selfSingleton =
+      currentGroup && currentGroup.cardIds.length === 1
+        ? currentGroup.groupId
+        : null;
+    const eligibleGroups = state.groups.filter(
+      (g) => g.groupId !== selfSingleton,
+    );
 
     const destRoll = rng();
     let destination;
-    if (destRoll < 0.3) destination = 'hand';
-    else if (destRoll < 0.55 || eligibleGroups.length === 0) destination = 'new';
-    else destination = eligibleGroups[Math.floor(rng() * eligibleGroups.length)].groupId;
+    if (destRoll < 0.3) destination = "hand";
+    else if (destRoll < 0.55 || eligibleGroups.length === 0)
+      destination = "new";
+    else
+      destination =
+        eligibleGroups[Math.floor(rng() * eligibleGroups.length)].groupId;
     E.rearrangeMoveCard(game, cardId, destination);
   }
 
@@ -148,16 +202,22 @@ for (let t = 0; t < TRIALS; t++) {
     const after = snapshotCardOwners(game);
     const afterCardCount = Object.keys(after).length;
     if (afterCardCount !== beforeCardCount) {
-      console.log(`FAIL trial ${t}: card count changed on commit (${beforeCardCount} -> ${afterCardCount})`);
+      console.log(
+        `FAIL trial ${t}: card count changed on commit (${beforeCardCount} -> ${afterCardCount})`,
+      );
       process.exit(1);
     }
     for (const id of Object.keys(before)) {
       if (!(id in after)) {
-        console.log(`FAIL trial ${t}: card ${id} disappeared after a successful commit`);
+        console.log(
+          `FAIL trial ${t}: card ${id} disappeared after a successful commit`,
+        );
         process.exit(1);
       }
       if (before[id] !== after[id]) {
-        console.log(`FAIL trial ${t}: card ${id} changed owner from ${before[id]} to ${after[id]} on commit -- pre-existing cards must keep their original owner`);
+        console.log(
+          `FAIL trial ${t}: card ${id} changed owner from ${before[id]} to ${after[id]} on commit -- pre-existing cards must keep their original owner`,
+        );
         process.exit(1);
       }
     }
@@ -169,11 +229,16 @@ for (let t = 0; t < TRIALS; t++) {
     }
   } else {
     blockedCommits++;
-    if (JSON.stringify(r.tableau) !== JSON.stringify(preCommitTableauSnapshot)) {
+    if (
+      JSON.stringify(r.tableau) !== JSON.stringify(preCommitTableauSnapshot)
+    ) {
       console.log(`FAIL trial ${t}: tableau mutated despite a rejected commit`);
       process.exit(1);
     }
-    if (JSON.stringify(r.hands[r.current]) !== JSON.stringify(preCommitHandSnapshot)) {
+    if (
+      JSON.stringify(r.hands[r.current]) !==
+      JSON.stringify(preCommitHandSnapshot)
+    ) {
       console.log(`FAIL trial ${t}: hand mutated despite a rejected commit`);
       process.exit(1);
     }
@@ -183,7 +248,11 @@ for (let t = 0; t < TRIALS; t++) {
 }
 
 if (commits === 0) {
-  console.log('FAIL: no trial ever produced a successful commit -- the harness itself is broken, not just unlucky.');
+  console.log(
+    "FAIL: no trial ever produced a successful commit -- the harness itself is broken, not just unlucky.",
+  );
   process.exit(1);
 }
-console.log(`OK: ${TRIALS} trials, ${commits} committed (invariants held), ${blockedCommits} correctly rejected (state untouched).`);
+console.log(
+  `OK: ${TRIALS} trials, ${commits} committed (invariants held), ${blockedCommits} correctly rejected (state untouched), ${cancels} cancelled.`,
+);

@@ -12,7 +12,9 @@
   --muted: #d3e3d9;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 /* Structural fix for a bug class hit twice already (#modalRoot, then
    #rearrangeControls): any author rule setting `display` on an element
@@ -22,7 +24,9 @@
    means hidden for every element, current or future, instead of relying
    on remembering a matching `.some-class[hidden]` override each time a
    new dynamically-shown/hidden element reuses a `display`-setting class. */
-[hidden] { display: none !important; }
+[hidden] {
+  display: none !important;
+}
 
 body {
   margin: 0;
@@ -43,10 +47,22 @@ body {
   gap: 0.5rem;
 }
 
-.topbar h1 { margin: 0; font-size: 1.2rem; }
-.subtitle { font-size: 0.7rem; color: var(--muted); font-weight: normal; display: block; }
+.topbar h1 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+.subtitle {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: normal;
+  display: block;
+}
 
-.topbar-controls { display: flex; gap: 0.75rem; align-items: center; }
+.topbar-controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
 
 button {
   background: var(--accent);
@@ -57,8 +73,13 @@ button {
   font-weight: 600;
   cursor: pointer;
 }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
-button:hover:not(:disabled) { filter: brightness(1.08); }
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
 
 select {
   padding: 0.3rem;
@@ -75,8 +96,14 @@ select {
   font-size: 0.95rem;
   color: var(--muted);
 }
-.score-box { font-weight: 600; }
-.score-box span { color: var(--accent); font-size: 1.1rem; margin-left: 0.3rem; }
+.score-box {
+  font-weight: 600;
+}
+.score-box span {
+  color: var(--accent);
+  font-size: 1.1rem;
+  margin-left: 0.3rem;
+}
 
 .banner {
   margin: 0.5rem 1.25rem;
@@ -90,7 +117,10 @@ select {
   flex-wrap: wrap;
 }
 
-.table, .hand-area, .log-panel, .ai-hand-area {
+.table,
+.hand-area,
+.log-panel,
+.ai-hand-area {
   margin: 1rem 1.25rem;
   background: var(--bg-panel);
   border-radius: 10px;
@@ -103,10 +133,19 @@ select {
 .ai-hand-area {
   border: 1px dashed var(--accent);
 }
-.ai-hand-area .hand .card { cursor: default; }
+.ai-hand-area .hand .card {
+  cursor: default;
+}
 
-h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
-.hint { font-weight: normal; font-size: 0.75rem; }
+h2 {
+  font-size: 0.95rem;
+  margin: 0.4rem 0 0.6rem;
+  color: var(--muted);
+}
+.hint {
+  font-weight: normal;
+  font-size: 0.75rem;
+}
 
 .open-row {
   display: flex;
@@ -127,12 +166,24 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   padding: 0.4rem;
   display: flex;
   cursor: pointer;
-  background: rgba(255,255,255,0.03);
+  background: rgba(255, 255, 255, 0.03);
 }
-.meld.targeted { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-.meld.draft-valid { border-style: solid; border-color: #6fbf73; }
-.meld.draft-invalid { border-style: solid; border-color: #d9534f; }
-.meld .meld-cards { display: flex; gap: 0.35rem; }
+.meld.targeted {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.meld.draft-valid {
+  border-style: solid;
+  border-color: #6fbf73;
+}
+.meld.draft-invalid {
+  border-style: solid;
+  border-color: #d9534f;
+}
+.meld .meld-cards {
+  display: flex;
+  gap: 0.35rem;
+}
 
 .card {
   width: 52px;
@@ -154,33 +205,81 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   font-size: 1rem;
   color: var(--black);
   flex-shrink: 0;
-  box-shadow: 1px 1px 3px rgba(0,0,0,0.4);
+  box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
   user-select: none;
 }
 /* Four-color deck: spades black (default), clubs green, hearts red,
    diamonds blue -- easier to tell apart at a glance than the standard
    two-color deck, especially spades vs. clubs. */
-.card.suit-s { color: var(--black); }
-.card.suit-c { color: var(--green); }
-.card.suit-h { color: var(--red); }
-.card.suit-d { color: var(--blue); }
-.card.joker { background: #e9dfc4; }
-.card .rank { font-size: 0.85em; line-height: 1.1; }
-.card .suit { font-size: 1.5em; line-height: 1; }
-.card.owner-1 { outline: 2px solid #6fbf73; outline-offset: -2px; }
-.card.owner-2 { outline: 2px solid #6f9fbf; outline-offset: -2px; }
+.card.suit-s {
+  color: var(--black);
+}
+.card.suit-c {
+  color: var(--green);
+}
+.card.suit-h {
+  color: var(--red);
+}
+.card.suit-d {
+  color: var(--blue);
+}
+.card.joker {
+  background: #e9dfc4;
+}
+.card .rank {
+  font-size: 0.85em;
+  line-height: 1.1;
+}
+.card .suit {
+  font-size: 1.5em;
+  line-height: 1;
+}
+.card.owner-1 {
+  outline: 2px solid #6fbf73;
+  outline-offset: -2px;
+}
+.card.owner-2 {
+  outline: 2px solid #6f9fbf;
+  outline-offset: -2px;
+}
 
 /* Only the open row gets the overlapping "cascade" look — it's a visual
    metaphor for that specific mechanic, not a general card style. */
-.open-row .card { margin-left: -30px; cursor: default; }
-.open-row .card:first-child { margin-left: 0; }
-.open-row .card.pickable { cursor: pointer; }
-.open-row .card.pickable:hover { transform: translateY(-6px); z-index: 1; position: relative; }
+.open-row .card {
+  margin-left: -30px;
+  cursor: default;
+}
+.open-row .card:first-child {
+  margin-left: 0;
+}
+.open-row .card.pickable {
+  cursor: pointer;
+}
+.open-row .card.pickable:hover {
+  transform: translateY(-6px);
+  z-index: 1;
+  position: relative;
+}
 
-.hand-area { }
-.hand-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.4rem; }
-.obligation { color: #ffb74d; font-size: 0.85rem; font-weight: 600; }
-.selection-count { color: var(--muted); font-size: 0.85rem; }
+.hand-area {
+}
+.hand-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.obligation {
+  color: #ffb74d;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.selection-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 
 .hand {
   display: flex;
@@ -189,10 +288,19 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   padding: 0.5rem 0 1rem;
   overflow-x: auto;
 }
-.hand .card { cursor: pointer; }
-.hand .card.selected { transform: translateY(-12px); box-shadow: 0 0 0 3px var(--accent); }
+.hand .card {
+  cursor: pointer;
+}
+.hand .card.selected {
+  transform: translateY(-12px);
+  box-shadow: 0 0 0 3px var(--accent);
+}
 
-.controls { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
 
 .log-panel #log {
   max-height: 160px;
@@ -202,12 +310,15 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   display: flex;
   flex-direction: column-reverse;
 }
-.log-panel #log div { padding: 0.15rem 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.log-panel #log div {
+  padding: 0.15rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
 
 .modal-root {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -221,14 +332,41 @@ h2 { font-size: 0.95rem; margin: 0.4rem 0 0.6rem; color: var(--muted); }
   max-width: 480px;
   width: 90%;
 }
-.modal-box h3 { margin-top: 0; }
-.modal-box .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+.modal-box h3 {
+  margin-top: 0;
+}
+.modal-box .modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
 
 @media (max-width: 480px) {
-  .table, .hand-area, .log-panel { margin: 0.6rem 0.6rem; padding: 0.6rem 0.6rem 1rem; }
-  .topbar { padding: 0.6rem 0.75rem; }
-  .scoreboard { flex-direction: column; align-items: center; text-align: center; padding: 0.5rem 0.75rem; font-size: 0.85rem; }
-  .banner { margin: 0.5rem 0.6rem; }
-  .controls { gap: 0.4rem; }
-  .controls button { flex: 1 1 auto; font-size: 0.85rem; }
+  .table,
+  .hand-area,
+  .log-panel {
+    margin: 0.6rem 0.6rem;
+    padding: 0.6rem 0.6rem 1rem;
+  }
+  .topbar {
+    padding: 0.6rem 0.75rem;
+  }
+  .scoreboard {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+  .banner {
+    margin: 0.5rem 0.6rem;
+  }
+  .controls {
+    gap: 0.4rem;
+  }
+  .controls button {
+    flex: 1 1 auto;
+    font-size: 0.85rem;
+  }
 }
