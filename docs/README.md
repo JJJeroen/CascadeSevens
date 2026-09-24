@@ -456,14 +456,15 @@ a new run on the table.
 
 ## Known simplifications (mock, not final spec)
 
-- **Joker wildcard rank entry uses `prompt()` dialogs**, not a proper picker
-  UI — fine for testing legality/flow, not representative of final UX.
-- **AI is a greedy heuristic** (first candidate meld found, cheapest-looking
-  row pickups only, never uses tableau rearrangement) — not the phase-2 AI,
-  and not tuned for a good game feel. It does consider joker swaps when
-  adding a matching real card, and verifies both row pickups and joker
-  swaps are actually resolvable before committing to them, so it won't
-  strand itself the way a real player wouldn't.
+- **AI is a greedy heuristic**, not the phase-2 AI, and not tuned for a good
+  game feel — it commits to the first legal action that clears its bar
+  rather than searching ahead. Within that, though, its candidate search is
+  not naive: it scans every open-row position (not just the oldest card) for
+  the best resolvable pickup, and ranks meld candidates by value rather than
+  taking whichever it finds first. It does consider joker swaps when adding
+  a matching real card, and verifies both row pickups and joker swaps are
+  actually resolvable before committing to them, so it won't strand itself
+  the way a real player wouldn't. It never uses tableau rearrangement.
 - **No persistence** — refreshing the page loses game state.
 
 ## Postmortem: a real bug that shipped past automated testing (2026-07-23)
