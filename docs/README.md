@@ -12,13 +12,15 @@ without needing a second person.
 
 ## Running locally
 
-No build step. From this directory:
+`engine.js`/`ai.js`/`app.js` are compiled from TypeScript (`../src/*.ts`) and committed here, so playing the mock needs no build step — but the page loads them as ES modules (`<script type="module">`), which browsers refuse to load over `file://`. A local server is required; opening `index.html` directly will show a blank page. From this directory:
 
 ```
 python3 -m http.server 8000
 ```
 
 Then open `http://localhost:8000/`.
+
+To change the game logic, edit `../src/*.ts` and run `npm run build` from the repo root to regenerate this directory's `.js` files — CI rejects a PR where the committed output doesn't match a fresh build.
 
 ## Running the tests
 

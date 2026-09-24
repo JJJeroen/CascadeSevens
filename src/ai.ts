@@ -12,8 +12,6 @@ import type {
   SlotSpec,
 } from "./types.js";
 
-const E = (): typeof CascadeEngine => CascadeEngine;
-
 interface Candidate {
   type: MeldType;
   slots: SlotSpec[];
@@ -53,7 +51,7 @@ function findCandidateSets(hand: Card[], jokersLeft: Card[]): Candidate[] {
       out.push({
         type: "set",
         slots,
-        value: slots.length * E().pointValue(rank),
+        value: slots.length * CascadeEngine.pointValue(rank),
         containsRank: rank,
       });
     } else if (cards.length === 2 && jokersLeft.length > 0) {
@@ -65,7 +63,7 @@ function findCandidateSets(hand: Card[], jokersLeft: Card[]): Candidate[] {
       out.push({
         type: "set",
         slots,
-        value: 2 * E().pointValue(rank) + 50,
+        value: 2 * CascadeEngine.pointValue(rank) + 50,
         usesJoker: joker.id,
         containsRank: rank,
       });
@@ -85,7 +83,6 @@ function findCandidateSets(hand: Card[], jokersLeft: Card[]): Candidate[] {
 // a live report where Q-JOKER(as K)-A was rejected as "no legal meld
 // possible" even though it's valid (2026-07-27).
 function findCandidateRuns(hand: Card[], jokersLeft: Card[]): Candidate[] {
-  const E_ = E();
   const out: Candidate[] = [];
   const seen = new Set<string>(); // dedupe identical slot sets across anchor pairs
   const groups = suitGroups(hand);
@@ -102,20 +99,26 @@ function findCandidateRuns(hand: Card[], jokersLeft: Card[]): Candidate[] {
           for (const aceHigh of [false, true]) {
             const lo = Math.min(
               ...anchors.map((c) =>
-                E_.orderedRankValue(c.rank as RealRank, aceHigh),
+                CascadeEngine.orderedRankValue(c.rank as RealRank, aceHigh),
               ),
             );
             const hi = Math.max(
               ...anchors.map((c) =>
-                E_.orderedRankValue(c.rank as RealRank, aceHigh),
+                CascadeEngine.orderedRankValue(c.rank as RealRank, aceHigh),
               ),
             );
             const within = cards.filter((c) => {
-              const v = E_.orderedRankValue(c.rank as RealRank, aceHigh);
+              const v = CascadeEngine.orderedRankValue(
+                c.rank as RealRank,
+                aceHigh,
+              );
               return v >= lo && v <= hi;
             });
             if (within.length < 2) continue;
-            const result = E_.solveRun(within, jokersLeft.slice(0, jokerCount));
+            const result = CascadeEngine.solveRun(
+              within,
+              jokersLeft.slice(0, jokerCount),
+            );
             // solveRun itself has no minimum-length floor -- it assumes
             // its caller already guarantees >=3 cards going in (true for
             // its other callers, not for this exploratory search).
@@ -127,10 +130,10 @@ function findCandidateRuns(hand: Card[], jokersLeft: Card[]): Candidate[] {
             if (seen.has(key)) continue;
             seen.add(key);
             const value = result.slots.reduce((sum, s) => {
-              if (s.wildAs) return sum + E_.pointValue("JOKER");
+              if (s.wildAs) return sum + CascadeEngine.pointValue("JOKER");
               return (
                 sum +
-                E_.pointValue(
+                CascadeEngine.pointValue(
                   (within.find((c) => c.id === s.cardId) as Card).rank,
                 )
               );
@@ -187,8 +190,7 @@ function pickDraw(
   game: Game,
 ): { source: "closed" } | { source: "row"; cardId: string } {
   const r = game.round as Round;
-  const E_ = E();
-  if (!E_.canDrawFromRow(game)) return { source: "closed" };
+  if (!CascadeEngine.canDrawFromRow(game)) return { source: "closed" };
   const hand = r.hands[r.current];
   let best: { cardId: string; score: number } | null = null;
   for (let idx = 0; idx < r.openRow.length; idx++) {
@@ -200,7 +202,10 @@ function pickDraw(
     // would wrongly reject perfectly good pickups the hand contributes
     // nothing to.
     if (!canResolvePickup(hand, scoop, bottom.id)) continue;
-    const scoopValue = scoop.reduce((s, c) => s + E_.pointValue(c.rank), 0);
+    const scoopValue = scoop.reduce(
+      (s, c) => s + CascadeEngine.pointValue(c.rank),
+      0,
+    );
     const score = scoopValue - (scoop.length - 1) * 5; // mild penalty for extra clutter cards
     if (!best || score > best.score) best = { cardId: bottom.id, score };
   }
@@ -210,7 +215,6 @@ function pickDraw(
 
 function playPart2(game: Game): void {
   const r = game.round as Round;
-  const E_ = E();
   let guard = 0;
   while (guard++ < 12) {
     const hand = r.hands[r.current];
@@ -229,7 +233,7 @@ function playPart2(game: Game): void {
         continue;
       }
       const placed =
-        (E_.hasComeOut(game) && tryPlaceSingleCard(game, card)) ||
+        (CascadeEngine.hasComeOut(game) && tryPlaceSingleCard(game, card)) ||
         tryLayMeldContaining(game, cardId, hand, jokersLeft);
       if (!placed) {
         // Genuinely stuck — shouldn't happen given canResolvePickup/
@@ -244,21 +248,21 @@ function playPart2(game: Game): void {
         // all of it just to get rid of the one unmeldable card. Only a
         // genuinely non-discardable obligation (a reclaimed joker from
         // a swap) falls back to undoing the pickup that created it.
-        if (cardId !== r.rowObligationCardId && E_.canUndoDraw(game))
-          E_.undoDraw(game);
+        if (cardId !== r.rowObligationCardId && CascadeEngine.canUndoDraw(game))
+          CascadeEngine.undoDraw(game);
         break;
       }
       continue;
     }
 
-    if (!E_.hasComeOut(game)) {
+    if (!CascadeEngine.hasComeOut(game)) {
       const sets = findCandidateSets(hand, jokersLeft);
       const runs = findCandidateRuns(hand, jokersLeft);
       const candidates = [...sets, ...runs].sort((a, b) => b.value - a.value);
       const fourKind = sets.find((s) => s.slots.length === 4);
       if (fourKind) {
         try {
-          E_.layNewMeld(game, fourKind.slots);
+          CascadeEngine.layNewMeld(game, fourKind.slots);
           continue;
         } catch {
           /* would empty the hand — fall through to the value-based attempt below */
@@ -270,7 +274,7 @@ function playPart2(game: Game): void {
       for (const cand of candidates) {
         if (acc >= 40) break;
         try {
-          E_.layNewMeld(game, cand.slots);
+          CascadeEngine.layNewMeld(game, cand.slots);
           acc += cand.value;
           played = true;
           break; // re-evaluate hand/jokers fresh each loop
@@ -292,7 +296,7 @@ function playPart2(game: Game): void {
     let laid = false;
     for (const cand of candidates) {
       try {
-        E_.layNewMeld(game, cand.slots);
+        CascadeEngine.layNewMeld(game, cand.slots);
         laid = true;
         break;
       } catch {
@@ -322,13 +326,13 @@ function playPart2(game: Game): void {
 // joker this turn" obligation is picked up automatically next loop
 // iteration by playPart2's existing obligation-first handling.
 function trySwapJoker(game: Game, card: Card): boolean {
-  const E_ = E();
   const r = game.round as Round;
   for (const meld of r.tableau) {
     const jokerSlot = meld.slots.find((s) => s.card.rank === "JOKER");
     if (!jokerSlot || !jokerSlot.wildAs || jokerSlot.wildAs.rank !== card.rank)
       continue;
-    if (meld.type === "run" && card.suit !== E_.meldSuit(meld)) continue;
+    if (meld.type === "run" && card.suit !== CascadeEngine.meldSuit(meld))
+      continue;
     // Only swap if the joker can actually be replayed afterward — §2.3
     // requires it be played back into a meld that same turn, and this
     // AI's only real mechanism for placing a bare joker is folding it
@@ -340,7 +344,7 @@ function trySwapJoker(game: Game, card: Card): boolean {
     // is still a fine, always-safe move.
     if (!canReplayJokerAfterSwap(r, jokerSlot.card, card)) continue;
     try {
-      E_.swapJoker(game, meld.id, jokerSlot.card.id, card.id);
+      CascadeEngine.swapJoker(game, meld.id, jokerSlot.card.id, card.id);
       return true;
     } catch {
       /* try next meld */
@@ -372,7 +376,6 @@ function canReplayJokerAfterSwap(
 
 function tryPlaceSingleCard(game: Game, card: Card): boolean {
   if (trySwapJoker(game, card)) return true;
-  const E_ = E();
   const r = game.round as Round;
   for (const meld of r.tableau) {
     try {
@@ -381,7 +384,7 @@ function tryPlaceSingleCard(game: Game, card: Card): boolean {
           meld.slots.find((s) => s.card.rank !== "JOKER")?.card.rank ??
           meld.slots.find((s) => s.wildAs)?.wildAs?.rank;
         if (card.rank === rank) {
-          E_.addToMeld(game, meld.id, card.id);
+          CascadeEngine.addToMeld(game, meld.id, card.id);
           return true;
         }
       } else {
@@ -389,7 +392,7 @@ function tryPlaceSingleCard(game: Game, card: Card): boolean {
           meld.slots.find((s) => s.card.rank !== "JOKER")?.card.suit ??
           meld.slots.find((s) => s.wildAs)?.wildAs?.suit;
         if (card.suit === suit) {
-          E_.addToMeld(game, meld.id, card.id);
+          CascadeEngine.addToMeld(game, meld.id, card.id);
           return true;
         }
       }
@@ -422,7 +425,7 @@ function tryLayMeldContaining(
   // whole-hand one.
   for (const cand of [...sets, ...runs]) {
     try {
-      E().layNewMeld(game, cand.slots);
+      CascadeEngine.layNewMeld(game, cand.slots);
       return true;
     } catch {
       /* try the next candidate */
@@ -448,7 +451,10 @@ function pickDiscard(game: Game): string {
   const hand = r.hands[r.current];
   const nonJokers = hand.filter((c) => c.rank !== "JOKER");
   const pool = nonJokers.length ? nonJokers : hand;
-  pool.sort((a, b) => E().pointValue(b.rank) - E().pointValue(a.rank));
+  pool.sort(
+    (a, b) =>
+      CascadeEngine.pointValue(b.rank) - CascadeEngine.pointValue(a.rank),
+  );
   return pool[0].id;
 }
 
@@ -457,12 +463,11 @@ interface TakeTurnCallbacks {
 }
 
 function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
-  const E_ = E();
   const r = game.round as Round;
 
   if (r.part === "turn0") {
     // AI always declines the exchange to keep the spike simple.
-    E_.turn0Decline(game);
+    CascadeEngine.turn0Decline(game);
     callbacks.onStateChanged();
     return;
   }
@@ -474,14 +479,14 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
       // it, but one draw is enough for this heuristic) — it must now
       // explicitly finish drawing, since a row-take no longer auto-
       // advances to Part 2 on its own.
-      E_.drawFromOpenRow(game, draw.cardId);
+      CascadeEngine.drawFromOpenRow(game, draw.cardId);
       if (r.ended) {
         callbacks.onStateChanged();
         return;
       }
-      E_.finishDrawing(game);
+      CascadeEngine.finishDrawing(game);
     } else {
-      E_.drawFromClosedPile(game);
+      CascadeEngine.drawFromClosedPile(game);
     }
     if (r.ended) {
       callbacks.onStateChanged();
@@ -497,9 +502,9 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
   }
   callbacks.onStateChanged();
 
-  if (E_.canProceedToDiscard(game)) {
+  if (CascadeEngine.canProceedToDiscard(game)) {
     const cardId = pickDiscard(game);
-    E_.discard(game, cardId);
+    CascadeEngine.discard(game, cardId);
   }
   callbacks.onStateChanged();
 }
