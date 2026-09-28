@@ -100,6 +100,31 @@ function startStaticServer() {
   });
 }
 
+// Chromium's CDP port isn't necessarily bound the instant the process
+// spawns -- how long it takes to actually start listening varies by
+// environment (a fixed 1000ms sleep worked locally but wasn't enough in
+// CI, where the very first run failed with a plain "fetch failed" the
+// instant it tried). Polls instead of guessing a single wait.
+async function waitForCdpReady(timeoutMs = 10000, pollMs = 250) {
+  const start = Date.now();
+  let lastError = null;
+  while (Date.now() - start < timeoutMs) {
+    try {
+      return await (
+        await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, {
+          method: "PUT",
+        })
+      ).json();
+    } catch (e) {
+      lastError = e;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+  }
+  throw new Error(
+    `Chromium's CDP endpoint never became reachable within ${timeoutMs}ms -- last error: ${lastError?.message}`,
+  );
+}
+
 async function connectCdp(browserBin) {
   const child = spawn(
     browserBin,
@@ -110,8 +135,15 @@ async function connectCdp(browserBin) {
       `--remote-debugging-port=${CDP_PORT}`,
       "--window-size=900,1400",
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "ignore", "pipe"] },
   );
+  // Captured so a "CDP never came up" error (below) can include WHY --
+  // e.g. a sandboxing restriction or missing shared library that made
+  // Chromium exit immediately instead of just being slow to start.
+  let stderr = "";
+  child.stderr.on("data", (d) => {
+    stderr += d;
+  });
   // A ChildProcess handle keeps Node's event loop alive on its own until
   // it exits, independent of whatever else the script is doing -- if
   // anything below throws before this function returns `child` to the
@@ -119,12 +151,7 @@ async function connectCdp(browserBin) {
   // hangs forever instead of exiting on the thrown error (confirmed in CI:
   // a run sat "pending" for 20+ minutes instead of failing in seconds).
   try {
-    await new Promise((r) => setTimeout(r, 1000));
-    const target = await (
-      await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, {
-        method: "PUT",
-      })
-    ).json();
+    const target = await waitForCdpReady();
     if (typeof WebSocket === "undefined") {
       throw new Error(
         "no global WebSocket in this Node runtime -- needs Node >=21 (stable since Node 22); this repo's package.json engines field allows >=18, which doesn't have it",
@@ -138,6 +165,7 @@ async function connectCdp(browserBin) {
     return await finishCdpSetup(child, ws);
   } catch (e) {
     child.kill();
+    if (stderr) e.message += `\nChromium stderr:\n${stderr}`;
     throw e;
   }
 }
