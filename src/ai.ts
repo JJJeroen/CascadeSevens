@@ -157,6 +157,19 @@ function findCandidateRuns(hand: Card[], jokersLeft: Card[]): Candidate[] {
 // melded this turn (§2.5) — this checks whether a meld containing it is
 // actually formable from hand + the whole scoop, so neither the AI nor
 // (via app.ts) a human gets a false sense that a pickup is safe.
+//
+// Deliberately does NOT also count a rearrangement-only resolution as
+// "resolvable" here (#18) -- tried it, and it made the AI take pickups whose only
+// resolution was dissolving one of its own melds, which in turn creates a
+// fresh obligation resolvable only by dissolving *another* meld built from
+// nearly the same cards, and so on. With no closed-pile draws ever
+// happening (canResolvePickup kept saying the row was "safe"), two AI
+// players reached a genuine infinite cycle -- the same ~7 cards endlessly
+// reshuffled between two melds, 1000+ turns, no progress, caught by the
+// stress simulation. Rearrangement stays scoped to what the acceptance
+// criteria actually asked for: a fallback for a stranded obligation
+// (tryResolveObligationViaRearrange below), not a reason to take on MORE
+// obligations in the first place.
 function canResolvePickup(
   hand: Card[],
   openRow: Card[],
@@ -234,7 +247,9 @@ function playPart2(game: Game): void {
       }
       const placed =
         (CascadeEngine.hasComeOut(game) && tryPlaceSingleCard(game, card)) ||
-        tryLayMeldContaining(game, cardId, hand, jokersLeft);
+        tryLayMeldContaining(game, cardId, hand, jokersLeft) ||
+        (CascadeEngine.hasComeOut(game) &&
+          tryResolveObligationViaRearrange(game, cardId, hand));
       if (!placed) {
         // Genuinely stuck — shouldn't happen given canResolvePickup/
         // canReplayJokerAfterSwap, but those are heuristic candidate
@@ -353,6 +368,14 @@ function trySwapJoker(game: Game, card: Card): boolean {
   return false;
 }
 
+// Deliberately does NOT also count a rearrangement-only resolution as
+// "resolvable" here, for the same reason as canResolvePickup above (see
+// its comment) -- broadening this too, on top of canResolvePickup, is
+// what actually produced the observed infinite cycle: a broadened
+// canReplayJokerAfterSwap said a swap was fine, the swap created a new
+// (joker) obligation, and resolving THAT via rearrangement dissolved yet
+// another meld, feeding the same cycle from the other direction. Kept
+// narrow on purpose.
 function canReplayJokerAfterSwap(
   round: Round,
   jokerCard: Card,
@@ -398,6 +421,71 @@ function tryPlaceSingleCard(game: Game, card: Card): boolean {
       }
     } catch {
       /* not a legal extension, try next meld */
+    }
+  }
+  return false;
+}
+
+// Fallback for a stranded obligated card that no simpler action can place
+// (#18) -- this is the AI's only use of tableau rearrangement, deliberately
+// narrow rather than a general rearrangement strategy: try dissolving one
+// of the AI's own melds ENTIRELY (every slot owned by the current player,
+// via the single-card pull -- pullFromMeld, §3 decision 2/11 -- not the
+// full draft-then-commit session, which isn't worth the extra state
+// machine for a heuristic bot) and see whether the freed cards plus hand
+// can form a new meld containing the obligated card. Only whole-meld
+// dissolves are tried (no partial-subset search) to keep this bounded and
+// simple, matching the acceptance criteria's own example.
+//
+// Only called for an obligation that's ALREADY stranded (playPart2 tries
+// this last, after simpler actions have already failed) -- never used to
+// decide whether to take ON an obligation in the first place. An earlier
+// version also broadened canResolvePickup/canReplayJokerAfterSwap to treat
+// a rearrange-only resolution as "safe to take", which backfired: the AI
+// started taking pickups/swaps whose only resolution was dissolving one of
+// its own melds, each dissolve creating a fresh obligation resolvable only
+// by dissolving *another* similar meld, and so on -- a real infinite cycle
+// (the same ~7 cards endlessly reshuffled between two melds) caught by the
+// 1000-game AI-vs-AI stress simulation. Reverted; kept narrow.
+function tryResolveObligationViaRearrange(
+  game: Game,
+  cardId: string,
+  hand: Card[],
+): boolean {
+  const r = game.round as Round;
+  for (const meld of r.tableau) {
+    if (meld.slots.some((s) => s.ownerId !== r.current)) continue; // only dissolve melds entirely our own
+    const ownCards = meld.slots.map((s) => s.card);
+    const virtualHand = hand.concat(ownCards);
+    const virtualJokers = virtualHand.filter((c) => c.rank === "JOKER");
+    const sets = findCandidateSets(virtualHand, virtualJokers).filter((c) =>
+      c.slots.some((s) => s.cardId === cardId),
+    );
+    const runs = findCandidateRuns(virtualHand, virtualJokers).filter((c) =>
+      c.slots.some((s) => s.cardId === cardId),
+    );
+    const candidate = [...sets, ...runs].find(
+      (c) => c.slots.length < virtualHand.length,
+    );
+    if (!candidate) continue;
+    try {
+      CascadeEngine.pullFromMeld(
+        game,
+        meld.id,
+        ownCards.map((c) => c.id),
+      );
+    } catch {
+      continue; // shouldn't happen for a whole-meld dissolve, but the engine is the authority
+    }
+    try {
+      CascadeEngine.layNewMeld(game, candidate.slots);
+      return true;
+    } catch {
+      // The pull already succeeded and can't be cleanly undone here, but
+      // that's still a legal state (the cards just sit in hand) -- report
+      // failure and let the caller's existing fallback (undo the draw, or
+      // leave a row obligation for discard-back) take over from there.
+      return false;
     }
   }
   return false;

@@ -116,6 +116,7 @@ function startRound(game: Game, rng: () => number = Math.random): Game {
     openRow, // index 0 = oldest/bottom, last = newest/top
     hands,
     tableau: [], // [{id, type:'set'|'run', slots:[{card, ownerId, wildAs}]}]
+    nextMeldSeq: 0,
     comeOut: [false, false],
     starter, // which player index starts this round's Turn 0 + (normally) Turn 1
     current: starter, // player index whose turn it is
@@ -644,8 +645,18 @@ function layNewMeld(game: Game, cardSelections: SlotSpec[]): Meld {
       card.rank === "JOKER" && s.wildAs ? { rank: s.wildAs.rank } : null;
     return { card, ownerId: r.current, wildAs };
   });
+  // A monotonic per-round counter, not r.tableau.length + Date.now() --
+  // dissolving and recreating melds (tableau rearrangement, #18) can make
+  // tableau.length repeat within a round, and a tight AI-vs-AI simulation
+  // loop can call this multiple times within the same millisecond, so that
+  // combination collided in real play: two melds ended up with the exact
+  // same id, and dissolving one via pullFromMeld's
+  // `r.tableau = r.tableau.filter(m => m.id !== meldId)` silently deleted
+  // BOTH, losing the second meld's cards entirely (found via the 1000-game
+  // AI stress simulation once the AI started actually calling pullFromMeld
+  // -- confirmed by a card-conservation failure, not by inspection).
   const meld: Meld = {
-    id: `m${r.tableau.length}-${Date.now()}`,
+    id: `m${r.nextMeldSeq++}`,
     type: result.type,
     slots,
   };
