@@ -46,6 +46,30 @@ after any change to `engine.js` or `ai.js` — this is the actual regression
 net referenced throughout the playtest-round entries below, not just a
 description of testing that happened once in a chat session.
 
+**Real-browser smoke test** — everything above is headless (no actual
+rendering, no real clicks), which is exactly the blind spot that let the
+`#modalRoot` and `#rearrangeControls` `[hidden]`/`display:flex` bugs ship
+past testing more than once (see the postmortem below). `tests/smoke_browser.js`
+drives the real, compiled `docs/index.html` through a genuine headless
+Chromium tab (raw Chrome DevTools Protocol over Node's built-in WebSocket —
+no extra dependency or browser-download step, just a Chromium/Chrome binary
+on `PATH`) through real clicks and dispatched pointer events: new game →
+Turn 0 → draw → lay a meld → discard. Run it with:
+
+```
+npm run test:browser
+```
+
+Exits non-zero on failure. Not wired into `tests/run-all.js`/`npm test`
+(needs a browser binary and takes noticeably longer — typically well under
+a minute, since main doesn't yet have a deterministic deal seed, so it
+retries "New Game" until the dealt hand happens to contain a meldable set
+or run), so it's a separate required CI step instead. This automates the
+core click-through path this project always previously verified by hand
+before calling a UI change "tested" — deeper, feature-specific flows
+(rearrange sessions, joker swaps, Turn 0's accept paths, etc.) still get
+manual real-browser verification per change, same as before.
+
 ## What's implemented
 
 Full ruleset from DESIGN.md as of the 2026-07-26 revision: deck/deal, the
