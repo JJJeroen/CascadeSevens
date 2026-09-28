@@ -2,9 +2,11 @@
 
 A static, no-build-step web page implementing the Cascade Sevens ruleset (see
 `../DESIGN.md`) so the rules and the cascade-pickup interaction can be played
-and felt before any React Native work starts. This corresponds to roadmap
+and felt before any native mobile work starts. This corresponds to roadmap
 phase 0 in DESIGN.md §7 (UI feasibility spike), extended to cover the full
-ruleset rather than just the cascade interaction.
+ruleset rather than just the cascade interaction. As of DESIGN.md §7 phase 2,
+this same page is also the source Capacitor wraps to produce the Android
+APK — see "Android APK (Capacitor)" below.
 
 Hotseat: you play Player 1. Player 2 is a simple heuristic bot (not the
 "real" AI scoped for phase 2 in DESIGN.md §5.2) — enough to test against
@@ -69,6 +71,42 @@ core click-through path this project always previously verified by hand
 before calling a UI change "tested" — deeper, feature-specific flows
 (rearrange sessions, joker swaps, Turn 0's accept paths, etc.) still get
 manual real-browser verification per change, same as before.
+
+## Android APK (Capacitor)
+
+The web mock above is wrapped, unchanged, by [Capacitor](https://capacitorjs.com/)
+to produce an installable Android APK for real-device testing — the confirmed
+DESIGN.md §5.2 stack decision (2026-09-28: Capacitor, not Expo/React Native).
+`capacitor.config.json` points `webDir` at this directory; the native project
+lives in `../android/` (a real, committed Android Studio/Gradle project — only
+its generated/build output is gitignored).
+
+**CI build (no local Android SDK needed):** every push/PR to `main` (and
+`workflow_dispatch`) runs `.github/workflows/android-apk.yml`, which builds
+`docs/`, syncs it into the Android project (`npm run cap:sync`), runs
+`./gradlew assembleDebug`, and uploads the resulting `app-debug.apk` as a
+downloadable workflow artifact — grab it from the run's Summary page and
+sideload it onto a connected phone (`adb install app-debug.apk`, or copy the
+file to the device and open it, with "install from unknown sources" allowed
+for the browser/file manager used).
+
+**Local build**, if you already have a JDK (21) and the Android SDK
+(`compileSdk`/`targetSdk` 36 — see `android/variables.gradle`) installed:
+
+```
+npm run build
+npm run cap:sync
+cd android && ./gradlew assembleDebug
+```
+
+The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`. Create
+`android/local.properties` with `sdk.dir=<path-to-your-Android-SDK>` first if
+`ANDROID_HOME`/`ANDROID_SDK_ROOT` isn't already set — that file is
+machine-specific and gitignored.
+
+This phase deliberately only wraps the existing web mock — no native
+plugins (Capacitor Preferences/Storage etc.), no signed release build, no
+Play Store listing work. Those are scoped to #5 (Epic: Google Play Release).
 
 ## What's implemented
 
