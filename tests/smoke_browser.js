@@ -112,17 +112,37 @@ async function connectCdp(browserBin) {
     ],
     { stdio: "ignore" },
   );
-  await new Promise((r) => setTimeout(r, 1000));
-  const target = await (
-    await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, {
-      method: "PUT",
-    })
-  ).json();
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    ws.onopen = resolve;
-    ws.onerror = reject;
-  });
+  // A ChildProcess handle keeps Node's event loop alive on its own until
+  // it exits, independent of whatever else the script is doing -- if
+  // anything below throws before this function returns `child` to the
+  // caller's try/finally, an un-killed child leaks and the whole process
+  // hangs forever instead of exiting on the thrown error (confirmed in CI:
+  // a run sat "pending" for 20+ minutes instead of failing in seconds).
+  try {
+    await new Promise((r) => setTimeout(r, 1000));
+    const target = await (
+      await fetch(`http://127.0.0.1:${CDP_PORT}/json/new?about:blank`, {
+        method: "PUT",
+      })
+    ).json();
+    if (typeof WebSocket === "undefined") {
+      throw new Error(
+        "no global WebSocket in this Node runtime -- needs Node >=21 (stable since Node 22); this repo's package.json engines field allows >=18, which doesn't have it",
+      );
+    }
+    const ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      ws.onopen = resolve;
+      ws.onerror = reject;
+    });
+    return await finishCdpSetup(child, ws);
+  } catch (e) {
+    child.kill();
+    throw e;
+  }
+}
+
+async function finishCdpSetup(child, ws) {
   let msgId = 1;
   const pending = new Map();
   ws.onmessage = (ev) => {
@@ -244,6 +264,20 @@ async function resolveTurn0IfPresent(page, timeoutMs = 8000) {
   return false;
 }
 
+// Hard ceiling, independent of any specific step's own error handling: a
+// normal (ref'd) timer forces the process to exit even if something else
+// leaked a handle that would otherwise keep the event loop alive forever
+// (exactly what happened in CI once before this existed -- 20+ minutes
+// "pending" instead of a fast, clear failure). 90s is generous next to the
+// typical/worst-case runtime measured locally (~1-60s across the New Game
+// retry loop).
+const watchdog = setTimeout(() => {
+  console.log(
+    "FAIL: watchdog timeout (90s) -- something hung; see above for the last thing that ran.",
+  );
+  process.exit(1);
+}, 90000);
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -253,121 +287,138 @@ async function main() {
     return;
   }
 
+  // A listening http.Server, like a live ChildProcess, keeps Node's event
+  // loop alive on its own -- server.close() must run no matter where
+  // below this throws, not just on the happy path (this is nested inside
+  // its own try/finally, separate from page's, specifically so a failure
+  // in connectCdp() itself -- before `page` even exists to have its own
+  // cleanup run -- still closes the server rather than leaking it).
   const server = await startStaticServer();
-  const page = await connectCdp(browserBin);
   try {
-    await page.evalJs(
-      `window.alert = (m) => { window.__alerts = window.__alerts || []; window.__alerts.push(m); };`,
-    );
-    await page.send("Page.navigate", {
-      url: `http://localhost:${PORT}/?t=${Date.now()}`,
-    });
-    await new Promise((r) => setTimeout(r, 600));
-
-    const hasElements = await page.evalJs(
-      `!!(document.getElementById('newGameBtn') && document.getElementById('hand') && document.getElementById('drawPileBtn') && document.getElementById('layMeldBtn') && document.getElementById('discardBtn'))`,
-    );
-    if (!hasElements) {
-      fail("expected page elements not found -- did docs/index.html change?");
-      return;
+    const page = await connectCdp(browserBin);
+    try {
+      await runSmokeFlow(page);
+    } finally {
+      page.ws.close();
+      page.child.kill();
     }
-
-    const MAX_ATTEMPTS = 40;
-    let meldIndices = null;
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      await clickSelector(page, "#newGameBtn");
-      await new Promise((r) => setTimeout(r, 300));
-      const humanTurnReady = await resolveTurn0IfPresent(page);
-      if (!humanTurnReady) {
-        fail(
-          `attempt ${attempt}: drawPileBtn never became enabled -- Turn 0 / AI-first-turn handling may be broken, or the game genuinely stalled`,
-        );
-        return;
-      }
-      await clickSelector(page, "#drawPileBtn");
-      await new Promise((r) => setTimeout(r, 200));
-      const hand = await readHand(page);
-      meldIndices = findSimpleMeldIndices(hand);
-      if (meldIndices) break;
-    }
-    if (!meldIndices) {
-      fail(
-        `never dealt a hand with a plain (non-joker) meldable set/run in ${MAX_ATTEMPTS} attempts -- either very unlucky (expected ~99.9%+ success) or something broke`,
-      );
-      return;
-    }
-
-    const handBefore = await readHand(page);
-    for (const idx of meldIndices) await clickHandCardAtIndex(page, idx);
-    if (await isDisabled(page, "#layMeldBtn")) {
-      fail(
-        "layMeldBtn is still disabled after selecting 3 cards that should form a valid meld",
-      );
-      return;
-    }
-    await clickSelector(page, "#layMeldBtn");
-    await new Promise((r) => setTimeout(r, 200));
-
-    const alertsAfterMeld = await page.evalJs(`window.__alerts || []`);
-    if (alertsAfterMeld.length > 0) {
-      fail(
-        `laying the meld triggered an error dialog: ${alertsAfterMeld.join("; ")}`,
-      );
-      return;
-    }
-    const handAfterMeld = await readHand(page);
-    if (handAfterMeld.length !== handBefore.length - meldIndices.length) {
-      fail(
-        `expected hand to shrink by ${meldIndices.length} after laying the meld, went from ${handBefore.length} to ${handAfterMeld.length}`,
-      );
-      return;
-    }
-    const tableauHasMeld = await page.evalJs(
-      `document.querySelectorAll('#tableau .card').length >= ${meldIndices.length}`,
-    );
-    if (!tableauHasMeld) {
-      fail("tableau doesn't show the newly laid meld's cards");
-      return;
-    }
-
-    // Discard: select the first remaining hand card and discard it.
-    await clickHandCardAtIndex(page, 0);
-    if (await isDisabled(page, "#discardBtn")) {
-      fail("discardBtn is still disabled after selecting exactly one card");
-      return;
-    }
-    const rowBefore = await page.evalJs(
-      `document.querySelectorAll('#openRow .card').length`,
-    );
-    await clickSelector(page, "#discardBtn");
-    await new Promise((r) => setTimeout(r, 300));
-    const alertsAfterDiscard = await page.evalJs(`window.__alerts || []`);
-    if (alertsAfterDiscard.length > 0) {
-      fail(
-        `discarding triggered an error dialog: ${alertsAfterDiscard.join("; ")}`,
-      );
-      return;
-    }
-    const rowAfter = await page.evalJs(
-      `document.querySelectorAll('#openRow .card').length`,
-    );
-    if (rowAfter !== rowBefore + 1) {
-      fail(
-        `expected the open row to grow by 1 after discarding, went from ${rowBefore} to ${rowAfter}`,
-      );
-      return;
-    }
-
-    console.log(
-      "OK: new game -> Turn 0 -> draw -> lay a meld -> discard, all via real clicks in headless Chromium.",
-    );
   } finally {
-    page.ws.close();
-    page.child.kill();
     server.close();
   }
 }
 
-main().catch((e) => {
-  fail(`unhandled error: ${e.stack || e.message}`);
-});
+async function runSmokeFlow(page) {
+  await page.evalJs(
+    `window.alert = (m) => { window.__alerts = window.__alerts || []; window.__alerts.push(m); };`,
+  );
+  await page.send("Page.navigate", {
+    url: `http://localhost:${PORT}/?t=${Date.now()}`,
+  });
+  await new Promise((r) => setTimeout(r, 600));
+
+  const hasElements = await page.evalJs(
+    `!!(document.getElementById('newGameBtn') && document.getElementById('hand') && document.getElementById('drawPileBtn') && document.getElementById('layMeldBtn') && document.getElementById('discardBtn'))`,
+  );
+  if (!hasElements) {
+    fail("expected page elements not found -- did docs/index.html change?");
+    return;
+  }
+
+  const MAX_ATTEMPTS = 40;
+  let meldIndices = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    await clickSelector(page, "#newGameBtn");
+    await new Promise((r) => setTimeout(r, 300));
+    const humanTurnReady = await resolveTurn0IfPresent(page);
+    if (!humanTurnReady) {
+      fail(
+        `attempt ${attempt}: drawPileBtn never became enabled -- Turn 0 / AI-first-turn handling may be broken, or the game genuinely stalled`,
+      );
+      return;
+    }
+    await clickSelector(page, "#drawPileBtn");
+    await new Promise((r) => setTimeout(r, 200));
+    const hand = await readHand(page);
+    meldIndices = findSimpleMeldIndices(hand);
+    if (meldIndices) break;
+  }
+  if (!meldIndices) {
+    fail(
+      `never dealt a hand with a plain (non-joker) meldable set/run in ${MAX_ATTEMPTS} attempts -- either very unlucky (expected ~99.9%+ success) or something broke`,
+    );
+    return;
+  }
+
+  const handBefore = await readHand(page);
+  for (const idx of meldIndices) await clickHandCardAtIndex(page, idx);
+  if (await isDisabled(page, "#layMeldBtn")) {
+    fail(
+      "layMeldBtn is still disabled after selecting 3 cards that should form a valid meld",
+    );
+    return;
+  }
+  await clickSelector(page, "#layMeldBtn");
+  await new Promise((r) => setTimeout(r, 200));
+
+  const alertsAfterMeld = await page.evalJs(`window.__alerts || []`);
+  if (alertsAfterMeld.length > 0) {
+    fail(
+      `laying the meld triggered an error dialog: ${alertsAfterMeld.join("; ")}`,
+    );
+    return;
+  }
+  const handAfterMeld = await readHand(page);
+  if (handAfterMeld.length !== handBefore.length - meldIndices.length) {
+    fail(
+      `expected hand to shrink by ${meldIndices.length} after laying the meld, went from ${handBefore.length} to ${handAfterMeld.length}`,
+    );
+    return;
+  }
+  const tableauHasMeld = await page.evalJs(
+    `document.querySelectorAll('#tableau .card').length >= ${meldIndices.length}`,
+  );
+  if (!tableauHasMeld) {
+    fail("tableau doesn't show the newly laid meld's cards");
+    return;
+  }
+
+  // Discard: select the first remaining hand card and discard it.
+  await clickHandCardAtIndex(page, 0);
+  if (await isDisabled(page, "#discardBtn")) {
+    fail("discardBtn is still disabled after selecting exactly one card");
+    return;
+  }
+  const rowBefore = await page.evalJs(
+    `document.querySelectorAll('#openRow .card').length`,
+  );
+  await clickSelector(page, "#discardBtn");
+  await new Promise((r) => setTimeout(r, 300));
+  const alertsAfterDiscard = await page.evalJs(`window.__alerts || []`);
+  if (alertsAfterDiscard.length > 0) {
+    fail(
+      `discarding triggered an error dialog: ${alertsAfterDiscard.join("; ")}`,
+    );
+    return;
+  }
+  const rowAfter = await page.evalJs(
+    `document.querySelectorAll('#openRow .card').length`,
+  );
+  if (rowAfter !== rowBefore + 1) {
+    fail(
+      `expected the open row to grow by 1 after discarding, went from ${rowBefore} to ${rowAfter}`,
+    );
+    return;
+  }
+
+  console.log(
+    "OK: new game -> Turn 0 -> draw -> lay a meld -> discard, all via real clicks in headless Chromium.",
+  );
+}
+
+main()
+  .catch((e) => {
+    fail(`unhandled error: ${e.stack || e.message}`);
+  })
+  .finally(() => {
+    clearTimeout(watchdog); // ran to completion one way or another -- the safety net is no longer needed
+  });

@@ -22,7 +22,14 @@ jobs:
           test -z "$(git status --porcelain -- docs)"
       - run: npm run lint
       - run: npm test
-      # Uses the google-chrome-stable binary ubuntu-latest ships preinstalled
-      # (no extra install step) -- see tests/smoke_browser.js for why this
+      # tests/smoke_browser.js uses the global WebSocket client, which
+      # doesn't exist on Node 18 (stable since Node 22) -- switch just this
+      # step up, keeping the rest of the job on the package.json-declared
+      # minimum (18) for an actual compatibility check. Uses the
+      # google-chrome-stable binary ubuntu-latest ships preinstalled (no
+      # extra install step) -- see tests/smoke_browser.js for why this
       # isn't Playwright.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - run: npm run test:browser
