@@ -1104,6 +1104,20 @@ function rearrangeMoveCard(
   if (!r.rearrange) throw new Error("Not currently rearranging.");
   const rr = r.rearrange;
   if (!rr.cardById[cardId]) throw new Error("Unknown card.");
+  // Moving a card into the group that's currently exactly {that card} is a
+  // no-op -- the card is already the entire content of that group. Must be
+  // checked before the removal below: that removal deletes a now-empty
+  // group immediately, so by the time the destination lookup ran, this
+  // exact group would already be gone, turning a no-op into a confusing
+  // "Unknown destination group" error (#23).
+  if (
+    destination !== "hand" &&
+    destination !== "new" &&
+    rr.groups[destination]?.length === 1 &&
+    rr.groups[destination][0] === cardId
+  ) {
+    return;
+  }
   for (const gid of Object.keys(rr.groups)) {
     rr.groups[gid] = rr.groups[gid].filter((id) => id !== cardId);
   }
