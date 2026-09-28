@@ -10,6 +10,21 @@ let turn0UiMode = "idle"; // 'idle' | 'select-swap'
 let rearrangeSelectedCardId = null; // card currently picked up within an active rearrange session
 let currentSeed = null; // seed behind the current game's shuffle -- displayed so a disputed game can be reproduced later (#16)
 let currentRng = null; // shared across every round of one game, so the whole game (not just round 1) replays identically from the seed
+// --- Drag-and-drop (#40) ---------------------------------------------------
+// Touch-first: Pointer Events, not native HTML5 drag-and-drop (which has no
+// real mobile browser support). A drag "arms" either on a short hold or on a
+// real vertical lift -- never on pure horizontal movement alone, which would
+// be indistinguishable from the user just scrolling the hand/open-row strip.
+// Once armed, any direction (including horizontal) drives the drag, which is
+// what makes a natural sideways slide work for hand reordering.
+const HOLD_MS = 180;
+const LIFT_PX = 6; // real vertical component that arms a drag before the hold fires
+const AUTOSCROLL_MARGIN = 64; // px from a viewport edge that triggers autoscroll during an armed drag
+const AUTOSCROLL_MAX_SPEED = 14; // px per animation frame right at the edge
+let dragState = null;
+let suppressNextClick = false;
+let handDisplayOrder = [];
+let autoScrollHandle = null;
 function $(id) {
     const el = document.getElementById(id);
     if (!el)
@@ -38,6 +53,7 @@ function cardText(card) {
 function buildCardEl(card, opts = {}) {
     const el = document.createElement("div");
     el.className = `card ${suitClass(card)}`.trim();
+    el.dataset.cardId = card.id;
     if (opts.ownerId !== undefined && opts.ownerId !== null)
         el.classList.add(`owner-${opts.ownerId + 1}`);
     if (opts.selected)
@@ -88,6 +104,7 @@ function newGame() {
     selectedHandCardIds.clear();
     targetedMeldId = null;
     turn0UiMode = "idle";
+    handDisplayOrder = [];
     render();
     scheduleIfAITurn();
 }
@@ -96,6 +113,7 @@ function nextRound() {
     selectedHandCardIds.clear();
     targetedMeldId = null;
     turn0UiMode = "idle";
+    handDisplayOrder = [];
     render();
     scheduleIfAITurn();
 }
@@ -270,6 +288,7 @@ function renderTableau() {
     r.tableau.forEach((meld) => {
         const box = document.createElement("div");
         box.className = "meld" + (meld.id === targetedMeldId ? " targeted" : "");
+        box.dataset.meldId = meld.id;
         box.addEventListener("click", () => {
             // Deliberately not a toggle: re-clicking an already-targeted meld
             // used to un-target it with no clear feedback, which was a likely
@@ -286,49 +305,55 @@ function renderTableau() {
                 wildAs: slot.wildAs,
                 pickable: canRearrange,
             });
-            if (canRearrange) {
-                cardEl.addEventListener("click", (ev) => {
-                    ev.stopPropagation(); // don't also toggle meld targeting
-                    // Clicking a joker with a matching hand card already selected is
-                    // clearly a swap-in-place attempt, not a rearrangement — do that
-                    // instead of a pull (which would just reject it for a joker
-                    // filling a run's internal gap, since removing it alone breaks
-                    // the run; a swap replaces it atomically instead).
-                    if (slot.card.rank === "JOKER" && selectedHandCardIds.size === 1) {
-                        const replacement = g.round?.hands[0].find((c) => c.id === [...selectedHandCardIds][0]);
-                        const matches = replacement &&
-                            slot.wildAs &&
-                            replacement.rank === slot.wildAs.rank &&
-                            (meld.type === "set" ||
-                                replacement.suit === CascadeEngine.meldSuit(meld));
-                        if (matches) {
-                            try {
-                                CascadeEngine.swapJoker(g, meld.id, slot.card.id, replacement.id);
-                                selectedHandCardIds.clear();
-                                afterHumanAction();
-                            }
-                            catch (e) {
-                                showError(errMsg(e));
-                            }
-                            return;
+            // Unconditional (matches the meld border's own always-on handler):
+            // tapping ANY part of a meld -- a card or the border -- targets it.
+            // Pulling a card back out is now a drag-out gesture (attachDragSource
+            // below), not a tap, which used to be genuinely ambiguous with the
+            // joker-swap-by-tap shortcut just below.
+            cardEl.addEventListener("click", (ev) => {
+                ev.stopPropagation(); // don't also re-set targeting via the border handler
+                // Clicking a joker with a matching hand card already selected is
+                // clearly a swap-in-place attempt, not a rearrangement — do that
+                // instead of just targeting the meld (which would need a second tap
+                // on "Add selected card to targeted meld", except that's not even
+                // the right button for a swap).
+                if (slot.card.rank === "JOKER" && selectedHandCardIds.size === 1) {
+                    const replacement = g.round?.hands[0].find((c) => c.id === [...selectedHandCardIds][0]);
+                    const matches = replacement &&
+                        slot.wildAs &&
+                        replacement.rank === slot.wildAs.rank &&
+                        (meld.type === "set" ||
+                            replacement.suit === CascadeEngine.meldSuit(meld));
+                    if (matches) {
+                        try {
+                            CascadeEngine.swapJoker(g, meld.id, slot.card.id, replacement.id);
+                            selectedHandCardIds.clear();
+                            afterHumanAction();
                         }
-                        // A card was selected and they clicked the joker specifically —
-                        // almost certainly a swap attempt, not a rearrange. Explain the
-                        // mismatch directly instead of silently falling through to an
-                        // unrelated (and likely also-failing) pull.
-                        const suitHint = meld.type === "run"
-                            ? SUIT_SYMBOL[CascadeEngine.meldSuit(meld)]
-                            : "";
-                        showError(`This joker stands in for ${slot.wildAs?.rank}${suitHint} — your selected ${replacement ? cardText(replacement) : "card"} doesn't match, so it can't be swapped in. If it would extend or fit this meld instead, target the meld's border and use "Add selected card to targeted meld."`);
+                        catch (e) {
+                            showError(errMsg(e));
+                        }
                         return;
                     }
-                    try {
-                        CascadeEngine.pullFromMeld(g, meld.id, [slot.card.id]);
-                        afterHumanAction();
-                    }
-                    catch (e) {
-                        showError(errMsg(e));
-                    }
+                    // A card was selected and they clicked the joker specifically —
+                    // almost certainly a swap attempt, not a rearrange. Explain the
+                    // mismatch directly instead of silently falling through to just
+                    // targeting the meld.
+                    const suitHint = meld.type === "run"
+                        ? SUIT_SYMBOL[CascadeEngine.meldSuit(meld)]
+                        : "";
+                    showError(`This joker stands in for ${slot.wildAs?.rank}${suitHint} — your selected ${replacement ? cardText(replacement) : "card"} doesn't match, so it can't be swapped in. If it would extend or fit this meld instead, target the meld's border and use "Add selected card to targeted meld."`);
+                    return;
+                }
+                targetedMeldId = meld.id;
+                render();
+            });
+            if (canRearrange && slot.ownerId === 0) {
+                attachDragSource(cardEl, {
+                    kind: "meld",
+                    cardId: slot.card.id,
+                    meldId: meld.id,
+                    ownsCard: true,
                 });
             }
             cardsWrap.appendChild(cardEl);
@@ -417,8 +442,13 @@ function renderHand() {
     if (r.rearrange)
         return; // "Your hand, in the draft" (rearrangeHandPool) stands in for this during a session
     const hand = r.hands[0]; // human is always P1
-    hand.forEach((card) => {
-        el.appendChild(buildCardEl(card, {
+    const order = reconcileHandDisplayOrder(hand);
+    const byId = new Map(hand.map((c) => [c.id, c]));
+    order.forEach((cardId) => {
+        const card = byId.get(cardId);
+        if (!card)
+            return;
+        const cardEl = buildCardEl(card, {
             selected: selectedHandCardIds.has(card.id),
             onClick: () => {
                 if (r.part === "turn0" &&
@@ -443,9 +473,391 @@ function renderHand() {
                     selectedHandCardIds.add(card.id);
                 render();
             },
-        }));
+        });
+        attachDragSource(cardEl, { kind: "hand", cardId: card.id });
+        el.appendChild(cardEl);
     });
 }
+// --- Hand display order (#40) -----------------------------------------------
+// Purely a UI concern -- the engine's hand array order isn't meaningful, so
+// display order is tracked separately and reconciled against the real hand
+// on every render: cards still present keep their relative order, new cards
+// (drawn, picked up, taken from a swap) are appended at the end.
+function reconcileHandDisplayOrder(hand) {
+    const ids = new Set(hand.map((c) => c.id));
+    const kept = handDisplayOrder.filter((id) => ids.has(id));
+    const known = new Set(kept);
+    handDisplayOrder = [
+        ...kept,
+        ...hand.filter((c) => !known.has(c.id)).map((c) => c.id),
+    ];
+    return handDisplayOrder;
+}
+function reorderHandCard(cardId, beforeCardId) {
+    const cur = handDisplayOrder.filter((id) => id !== cardId);
+    const idx = beforeCardId ? cur.indexOf(beforeCardId) : -1;
+    cur.splice(idx === -1 ? cur.length : idx, 0, cardId);
+    handDisplayOrder = cur;
+}
+// --- Drag-and-drop mechanics (#40) ------------------------------------------
+function attachDragSource(el, source) {
+    el.addEventListener("pointerdown", (ev) => {
+        if (!ev.isPrimary || dragState !== null)
+            return;
+        const g = game;
+        const r = g.round;
+        if (r.part === "turn0")
+            return; // Turn-0 guard: a plain tap must reach turn0Accept unaffected
+        const rect = el.getBoundingClientRect();
+        dragState = {
+            pointerId: ev.pointerId,
+            source,
+            originEl: el,
+            startX: ev.clientX,
+            startY: ev.clientY,
+            curX: ev.clientX,
+            curY: ev.clientY,
+            grabDx: ev.clientX - rect.left,
+            grabDy: ev.clientY - rect.top,
+            armed: false,
+            holdTimer: setTimeout(() => armDrag(), HOLD_MS),
+            ghostEl: null,
+            hoverTarget: null,
+            canPlay: r.part === 2 && r.current === 0 && !r.rearrange,
+        };
+    });
+}
+function armDrag() {
+    const ds = dragState;
+    if (!ds || ds.armed)
+        return;
+    if (ds.holdTimer)
+        clearTimeout(ds.holdTimer);
+    ds.holdTimer = null;
+    ds.originEl.setPointerCapture(ds.pointerId);
+    ds.originEl.classList.add("dragging");
+    const rect = ds.originEl.getBoundingClientRect();
+    const ghost = ds.originEl.cloneNode(true);
+    ghost.classList.remove("dragging");
+    ghost.classList.add("drag-ghost");
+    ghost.style.width = `${rect.width}px`;
+    ghost.style.height = `${rect.height}px`;
+    ghost.style.left = `${rect.left}px`;
+    ghost.style.top = `${rect.top}px`;
+    document.body.appendChild(ghost);
+    ds.ghostEl = ghost;
+    ds.armed = true;
+    startAutoScroll();
+}
+function findScrollParent(x, y) {
+    let node = document.elementFromPoint(x, y);
+    while (node && node !== document.body && node !== document.documentElement) {
+        if (node instanceof HTMLElement) {
+            const style = getComputedStyle(node);
+            if (/(auto|scroll)/.test(style.overflowY) &&
+                node.scrollHeight > node.clientHeight + 1) {
+                return node;
+            }
+        }
+        node = node.parentElement;
+    }
+    return (document.scrollingElement ??
+        document.documentElement);
+}
+// Dragging near the top/bottom edge of the viewport scrolls whichever
+// container is actually scrollable there (the tableau's own scroll region,
+// or the page) on its own animation-frame ticks -- a pointer that's simply
+// being held still at the edge generates no further pointermove events to
+// react to, so without this a meld below the fold is unreachable by drag.
+function autoScrollStep() {
+    const ds = dragState;
+    if (!ds || !ds.armed) {
+        autoScrollHandle = null;
+        return;
+    }
+    const vh = window.innerHeight;
+    let dy = 0;
+    if (ds.curY < AUTOSCROLL_MARGIN) {
+        dy = -AUTOSCROLL_MAX_SPEED * (1 - ds.curY / AUTOSCROLL_MARGIN);
+    }
+    else if (ds.curY > vh - AUTOSCROLL_MARGIN) {
+        dy = AUTOSCROLL_MAX_SPEED * (1 - (vh - ds.curY) / AUTOSCROLL_MARGIN);
+    }
+    if (dy !== 0) {
+        const scrollEl = findScrollParent(ds.curX, ds.curY);
+        if (scrollEl === document.documentElement ||
+            scrollEl === document.scrollingElement) {
+            window.scrollBy(0, dy);
+        }
+        else {
+            scrollEl.scrollTop += dy;
+        }
+        if (ds.ghostEl) {
+            ds.ghostEl.style.left = `${ds.curX - ds.grabDx}px`;
+            ds.ghostEl.style.top = `${ds.curY - ds.grabDy}px`;
+        }
+        const prevTarget = ds.hoverTarget;
+        const target = hitTestDrop(ds.curX, ds.curY);
+        ds.hoverTarget = target;
+        updateDragOverHighlight(prevTarget, target);
+    }
+    autoScrollHandle = requestAnimationFrame(autoScrollStep);
+}
+function startAutoScroll() {
+    if (autoScrollHandle !== null)
+        return;
+    autoScrollHandle = requestAnimationFrame(autoScrollStep);
+}
+function stopAutoScroll() {
+    if (autoScrollHandle !== null) {
+        cancelAnimationFrame(autoScrollHandle);
+        autoScrollHandle = null;
+    }
+}
+function dropTargetEl(target) {
+    if (!target)
+        return null;
+    if (target.kind === "meld") {
+        return document.querySelector(`.meld[data-meld-id="${target.meldId}"]`);
+    }
+    if (target.kind === "open-row")
+        return $("openRow");
+    if (target.kind === "hand")
+        return $("hand");
+    return null; // tableau-empty: nothing to highlight
+}
+function updateDragOverHighlight(prev, next) {
+    const prevEl = dropTargetEl(prev);
+    const nextEl = dropTargetEl(next);
+    if (prevEl && prevEl !== nextEl)
+        prevEl.classList.remove("drag-over");
+    if (nextEl)
+        nextEl.classList.add("drag-over");
+}
+function hitTestDrop(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!el)
+        return null;
+    const meldBox = el.closest(".meld[data-meld-id]");
+    if (meldBox) {
+        const onCard = el.closest(".meld .card[data-card-id]");
+        return {
+            kind: "meld",
+            meldId: meldBox.dataset.meldId,
+            onCardId: onCard?.dataset.cardId ?? null,
+        };
+    }
+    if (el.closest("#tableau"))
+        return { kind: "tableau-empty" };
+    if (el.closest("#openRow"))
+        return { kind: "open-row" };
+    if (el.closest("#hand")) {
+        const overCard = el.closest(".hand .card[data-card-id]");
+        if (!overCard)
+            return { kind: "hand", beforeCardId: null };
+        const r = overCard.getBoundingClientRect();
+        const before = x < r.left + r.width / 2;
+        const nextEl = overCard.nextElementSibling;
+        const nextId = nextEl instanceof HTMLElement ? (nextEl.dataset.cardId ?? null) : null;
+        return {
+            kind: "hand",
+            beforeCardId: before ? (overCard.dataset.cardId ?? null) : nextId,
+        };
+    }
+    return null;
+}
+function cleanupDrag(ds) {
+    stopAutoScroll();
+    ds.originEl.classList.remove("dragging");
+    if (ds.ghostEl)
+        ds.ghostEl.remove();
+    updateDragOverHighlight(ds.hoverTarget, null);
+}
+function resolveDrop(ds) {
+    const g = game;
+    const r = g.round;
+    const target = ds.hoverTarget;
+    if (ds.source.kind === "meld") {
+        if (target?.kind === "meld" && target.meldId === ds.source.meldId)
+            return; // dropped back in place
+        if (!ds.source.ownsCard) {
+            showError("You don't have any cards of your own in this meld to pull.");
+            return;
+        }
+        try {
+            CascadeEngine.pullFromMeld(g, ds.source.meldId, [ds.source.cardId]);
+            afterHumanAction();
+        }
+        catch (e) {
+            showError(errMsg(e));
+        }
+        return;
+    }
+    // hand source
+    const card = r.hands[0].find((c) => c.id === ds.source.cardId);
+    if (!card)
+        return;
+    if (target?.kind === "hand") {
+        reorderHandCard(ds.source.cardId, target.beforeCardId);
+        render();
+        return;
+    }
+    if (!ds.canPlay) {
+        if (target)
+            showError("You can only play a card during Part 2 of your own turn.");
+        return; // no target and can't play -> just snap back, no message needed
+    }
+    // Dragging one card out of an active multi-card selection onto the
+    // tableau (a meld or empty space) reads as "lay these as a new meld" --
+    // matching what a player who's already selected 3+ cards actually means
+    // by dragging any one of them tableau-ward, not "move just this card."
+    // Reuses the exact same resolution the "Lay new meld" button does.
+    if (selectedHandCardIds.size > 1 &&
+        selectedHandCardIds.has(card.id) &&
+        (target?.kind === "meld" || target?.kind === "tableau-empty")) {
+        const ids = [...selectedHandCardIds];
+        const resolved = CascadeEngine.autoResolveMeld(r.hands[0], ids);
+        if (!resolved.ok) {
+            showError(resolved.error ?? "Not a valid meld.");
+            return;
+        }
+        try {
+            CascadeEngine.layNewMeld(g, resolved.slots);
+            selectedHandCardIds.clear();
+            targetedMeldId = null;
+            afterHumanAction();
+        }
+        catch (e) {
+            showError(errMsg(e));
+        }
+        return;
+    }
+    if (target?.kind === "tableau-empty") {
+        showError('Select 3+ cards and use "Lay new meld" to start a new meld — dragging one card only adds to an existing meld.');
+        return;
+    }
+    if (target?.kind === "open-row") {
+        try {
+            CascadeEngine.discard(g, card.id);
+            selectedHandCardIds.delete(card.id);
+            targetedMeldId = null;
+            afterHumanAction();
+        }
+        catch (e) {
+            showError(errMsg(e));
+        }
+        return;
+    }
+    if (target?.kind === "meld") {
+        const meld = r.tableau.find((m) => m.id === target.meldId);
+        if (!meld)
+            return;
+        const onSlot = target.onCardId
+            ? meld.slots.find((s) => s.card.id === target.onCardId)
+            : null;
+        const matches = !!onSlot &&
+            onSlot.card.rank === "JOKER" &&
+            !!onSlot.wildAs &&
+            card.rank === onSlot.wildAs.rank &&
+            (meld.type === "set" || card.suit === CascadeEngine.meldSuit(meld));
+        try {
+            if (onSlot && matches) {
+                CascadeEngine.swapJoker(g, meld.id, onSlot.card.id, card.id);
+            }
+            else {
+                const resolved = CascadeEngine.autoResolveAddToMeld(meld, card);
+                if (!resolved) {
+                    showError("No legal spot for that card in this meld.");
+                    return;
+                }
+                CascadeEngine.addToMeld(g, meld.id, card.id, resolved.wildAs);
+            }
+            selectedHandCardIds.delete(card.id);
+            afterHumanAction();
+        }
+        catch (e) {
+            showError(errMsg(e));
+        }
+    }
+    // target === null (dropped nowhere recognized): snap back, no-op.
+}
+document.addEventListener("pointermove", (ev) => {
+    if (!dragState || ev.pointerId !== dragState.pointerId)
+        return;
+    if (!dragState.armed) {
+        // Horizontal movement never bails the hold out on its own. An earlier
+        // version cancelled the drag once total movement passed a small
+        // threshold before the hold timer or a vertical lift fired -- but real
+        // touch input covers that distance within the very first movement
+        // sample of ANY gesture, including a deliberate "pick up, slide
+        // sideways" hand-reorder drag, so that heuristic cancelled reorder's
+        // own natural motion before the hold timer ever got a chance to run.
+        // A real vertical lift still arms immediately; otherwise the hold timer
+        // (started at pointerdown) is the sole arbiter, and a quick tap+release
+        // clears it before it ever fires (see the pointerup handler) -- so a
+        // fast flick-to-scroll still isn't mistaken for a drag.
+        dragState.curX = ev.clientX;
+        dragState.curY = ev.clientY;
+        const dy = ev.clientY - dragState.startY;
+        if (Math.abs(dy) >= LIFT_PX) {
+            armDrag();
+        }
+        else {
+            return; // still waiting on the hold timer
+        }
+    }
+    const ds = dragState;
+    ev.preventDefault();
+    ds.curX = ev.clientX;
+    ds.curY = ev.clientY;
+    if (ds.ghostEl) {
+        ds.ghostEl.style.left = `${ev.clientX - ds.grabDx}px`;
+        ds.ghostEl.style.top = `${ev.clientY - ds.grabDy}px`;
+    }
+    const prevTarget = ds.hoverTarget;
+    const target = hitTestDrop(ev.clientX, ev.clientY);
+    ds.hoverTarget = target;
+    updateDragOverHighlight(prevTarget, target);
+});
+document.addEventListener("pointerup", (ev) => {
+    if (!dragState || ev.pointerId !== dragState.pointerId)
+        return;
+    const ds = dragState;
+    dragState = null;
+    if (!ds.armed) {
+        if (ds.holdTimer)
+            clearTimeout(ds.holdTimer);
+        return; // plain tap -- let the browser's own synthetic click fire as normal
+    }
+    ds.originEl.releasePointerCapture(ev.pointerId);
+    suppressNextClick = true;
+    setTimeout(() => {
+        suppressNextClick = false;
+    }, 0);
+    cleanupDrag(ds);
+    resolveDrop(ds);
+});
+document.addEventListener("pointercancel", (ev) => {
+    if (!dragState || ev.pointerId !== dragState.pointerId)
+        return;
+    const ds = dragState;
+    dragState = null;
+    if (ds.holdTimer)
+        clearTimeout(ds.holdTimer);
+    if (ds.armed)
+        cleanupDrag(ds); // aborted drag just snaps back, no resolveDrop
+});
+// Capture-phase so it runs before the drop target's own bubble-phase click
+// handler (including the meld-card handler's own stopPropagation), stopping
+// a completed drag's pointerup from also re-triggering the origin card's
+// normal tap behavior.
+document.addEventListener("click", (ev) => {
+    if (suppressNextClick) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        suppressNextClick = false;
+    }
+}, true);
 function renderControls() {
     const g = game;
     const r = g.round;

@@ -152,12 +152,20 @@ h2 {
   min-height: 90px;
   padding: 0.5rem 0;
   overflow-x: auto;
+  touch-action: pan-x;
 }
 
 .tableau {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+  /* Its own bounded, scrollable region (added #40) -- without this the
+     tableau just grows the whole page taller as melds accumulate, forcing
+     constant scrolling past it to reach the hand/controls below. Also gives
+     drag-to-add a concrete scrollable target to autoscroll when a drop
+     target has scrolled out of view mid-drag. */
+  max-height: 42vh;
+  overflow-y: auto;
 }
 
 .meld {
@@ -283,17 +291,63 @@ h2 {
 
 .hand {
   display: flex;
-  gap: 0.5rem;
   min-height: 90px;
   padding: 0.5rem 0 1rem;
   overflow-x: auto;
+  touch-action: pan-x;
 }
 .hand .card {
   cursor: pointer;
 }
 .hand .card.selected {
+  /* No z-index here (deliberately, #40 follow-up): raising a card above its
+     neighbors made its full-width box the topmost hit target across every
+     card it geometrically overlaps -- not just its own exposed strip -- so
+     selecting one card silently blocked tapping any of the next couple of
+     cards in the overlapping fan. A plain lift is enough of a "this is
+     selected" cue without stealing its neighbors' clickable area; the
+     selected card can still be partly tucked under the next unselected one,
+     same as any other overlap in the fan. */
   transform: translateY(-12px);
   box-shadow: 0 0 0 3px var(--accent);
+}
+/* Bigger + overlapping, scoped to the real (human) hand only -- #aiHand
+   shares the .hand class for its debug-only row, which doesn't need either
+   the larger touch targets or the overlap (added #40; an earlier version
+   enlarged .card globally, which also ballooned every meld in the tableau). */
+#hand {
+  min-height: 108px;
+}
+#hand .card {
+  width: 64px;
+  height: 92px;
+  margin-left: -34px;
+}
+#hand .card:first-child {
+  margin-left: 0;
+}
+
+.card.dragging {
+  opacity: 0.35;
+}
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.9;
+  transform: scale(1.06);
+  box-shadow: 2px 4px 10px rgba(0, 0, 0, 0.5);
+}
+/* Strong, unambiguous drop highlight -- especially important on the open row,
+   since dragging a hand card there ends the turn (discard) in one continuous
+   motion, unlike today's two deliberate steps (select, then press Discard).
+   This is the pre-release "this will happen" signal that stands in for a
+   confirmation dialog without slowing the gesture down. */
+.meld.drag-over,
+#openRow.drag-over,
+#hand.drag-over {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .controls {
