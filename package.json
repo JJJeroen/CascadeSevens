@@ -16,17 +16,23 @@
     "test": "node tests/run-all.js",
     "test:browser": "node tests/smoke_browser.js",
     "lint": "eslint . && prettier --check \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\"",
-    "lint:fix": "eslint . --fix && prettier --write \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\""
+    "lint:fix": "eslint . --fix && prettier --write \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\"",
+    "cap:sync": "cap sync android"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@eslint/js": "^10.0.1",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",
     "prettier": "^3.9.9",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
   }
 }

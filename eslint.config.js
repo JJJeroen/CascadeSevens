@@ -22,6 +22,6 @@ export default [
   },
   prettierConfig,
   {
-    ignores: ["node_modules/", "docs/*.js"],
+    ignores: ["node_modules/", "docs/*.js", "android/"],
   },
 ];
