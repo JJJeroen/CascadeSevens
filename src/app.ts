@@ -21,6 +21,8 @@ let selectedHandCardIds = new Set<string>();
 let targetedMeldId: string | null = null;
 let turn0UiMode: "idle" | "select-swap" = "idle"; // 'idle' | 'select-swap'
 let rearrangeSelectedCardId: string | null = null; // card currently picked up within an active rearrange session
+let currentSeed: number | null = null; // seed behind the current game's shuffle -- displayed so a disputed game can be reproduced later (#16)
+let currentRng: (() => number) | null = null; // shared across every round of one game, so the whole game (not just round 1) replays identically from the seed
 
 function $<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -93,8 +95,24 @@ function buildCardEl(card: Card, opts: BuildCardElOpts = {}): HTMLElement {
 
 function newGame(): void {
   const mode = $<HTMLSelectElement>("modeSelect").value as GameMode;
-  game = CascadeEngine.newGame(mode);
-  CascadeEngine.startRound(game);
+  const seedField = $<HTMLInputElement>("seedInput").value.trim();
+  // Leave the field blank for a fresh random deal; enter a previously-shown
+  // seed to replay that exact deal (shuffle + starter coin-flip) -- e.g. to
+  // reproduce a disputed game from a saved number instead of screenshots.
+  const seed =
+    seedField === ""
+      ? Math.floor(Math.random() * 1_000_000_000)
+      : Number(seedField);
+  if (!Number.isFinite(seed)) {
+    showError(
+      `"${seedField}" isn't a valid seed -- enter a whole number, or leave it blank for a random deal.`,
+    );
+    return;
+  }
+  currentSeed = seed;
+  currentRng = CascadeEngine.seededRng(seed);
+  game = CascadeEngine.newGame(mode, currentRng);
+  CascadeEngine.startRound(game, currentRng);
   selectedHandCardIds.clear();
   targetedMeldId = null;
   turn0UiMode = "idle";
@@ -103,7 +121,7 @@ function newGame(): void {
 }
 
 function nextRound(): void {
-  CascadeEngine.startRound(game as Game);
+  CascadeEngine.startRound(game as Game, currentRng ?? undefined);
   selectedHandCardIds.clear();
   targetedMeldId = null;
   turn0UiMode = "idle";
@@ -144,6 +162,8 @@ function render(): void {
   $("scoreP2").textContent = String(CascadeEngine.liveScore(game, 1));
   $("roundNum").textContent = String(game.roundNumber);
   $("pileCount").textContent = String((game.round as Round).closedPile.length);
+  $("currentSeed").textContent =
+    currentSeed === null ? "–" : String(currentSeed);
 
   renderBanner();
   renderOpenRow();

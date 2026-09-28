@@ -19,6 +19,15 @@
             <option value="quick">Quick (&gt;300)</option>
           </select>
         </label>
+        <label
+          >Seed:
+          <input
+            id="seedInput"
+            type="text"
+            size="8"
+            placeholder="random"
+            title="Leave blank for a random deal, or enter a previously-shown seed to replay that exact deal (shuffle, starter card, and starter coin-flip)."
+        /></label>
         <button id="newGameBtn">New Game</button>
       </div>
     </header>
@@ -26,7 +35,8 @@
     <div class="scoreboard">
       <div class="score-box you">You (P1) <span id="scoreP1">0</span></div>
       <div class="round-info">
-        Round <span id="roundNum">0</span> · Pile: <span id="pileCount">0</span>
+        Round <span id="roundNum">0</span> · Pile:
+        <span id="pileCount">0</span> · Seed: <span id="currentSeed">–</span>
       </div>
       <div class="score-box ai">AI (P2) <span id="scoreP2">0</span></div>
     </div>

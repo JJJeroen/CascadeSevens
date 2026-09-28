@@ -36,6 +36,20 @@ function buildDeck() {
     deck.push({ id: "JOKER-2", rank: "JOKER", suit: null });
     return deck;
 }
+// A small deterministic LCG seeded by an integer -- lets a whole deal
+// (shuffle + starter coin-flip) be reproduced later from just the seed
+// value, e.g. to replay a disputed game (#16). Not cryptographically
+// strong; only needs to be deterministic and reasonably well-distributed
+// for shuffling. AI play has no randomness of its own (see ai.ts), so a
+// reproduced deal plus the same sequence of actions reproduces the whole
+// game, not just the initial hands.
+function seededRng(seed) {
+    let s = seed;
+    return () => {
+        s = (s * 9301 + 49297) % 233280;
+        return s / 233280;
+    };
+}
 function shuffle(deck, rng = Math.random) {
     const a = deck.slice();
     for (let i = a.length - 1; i > 0; i--) {
@@ -1207,6 +1221,7 @@ export const CascadeEngine = {
     pointValue,
     buildDeck,
     shuffle,
+    seededRng,
     newGame,
     startRound,
     other,
