@@ -81,6 +81,7 @@ export interface Round {
   openRow: Card[];
   hands: [Card[], Card[]];
   tableau: Meld[];
+  nextMeldSeq: number; // monotonic counter for meld ids -- see layNewMeld
   comeOut: [boolean, boolean];
   starter: PlayerIdx;
   current: PlayerIdx;
