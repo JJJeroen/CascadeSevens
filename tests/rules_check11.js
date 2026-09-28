@@ -341,6 +341,44 @@ check(
   },
 );
 
+check(
+  "rearrange: moving a card into the group that's currently exactly itself is a no-op, not an error (#23)",
+  () => {
+    const game = freshGameAtPart2([card("2", "H")]);
+    game.round.tableau.push({
+      id: "m1",
+      type: "set",
+      slots: [
+        { card: card("9", "S"), ownerId: 0, wildAs: null },
+        { card: card("9", "H"), ownerId: 0, wildAs: null },
+        { card: card("9", "D"), ownerId: 0, wildAs: null },
+      ],
+    });
+    E.startRearrange(game);
+    E.rearrangeMoveCard(game, "9S", "new");
+    const st = E.rearrangeState(game);
+    const singleton = st.groups.find((g) => g.cardIds.includes("9S"));
+    if (singleton.cardIds.length !== 1)
+      throw new Error("test setup: expected 9S alone in its own new group");
+    // rearrangeMoveCard removes the card from wherever it is FIRST (deleting
+    // the now-empty group) and only afterward looks up the destination --
+    // so moving 9S into the exact group that currently holds only 9S used
+    // to throw "Unknown destination group": by the time the lookup ran, the
+    // group had already been deleted out from under it.
+    E.rearrangeMoveCard(game, "9S", singleton.groupId); // must not throw
+    const st2 = E.rearrangeState(game);
+    const stillThere = st2.groups.find((g) => g.cardIds.includes("9S"));
+    if (!stillThere || stillThere.cardIds.length !== 1)
+      throw new Error(
+        "9S should still be alone in its own group after the no-op move",
+      );
+    if (st2.groups.length !== st.groups.length)
+      throw new Error(
+        "no-op move should not have changed the number of groups",
+      );
+  },
+);
+
 console.log(
   failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`,
 );

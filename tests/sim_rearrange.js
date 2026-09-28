@@ -167,28 +167,16 @@ for (let t = 0; t < TRIALS; t++) {
     ];
     if (allIds.length === 0) break;
     const cardId = allIds[Math.floor(rng() * allIds.length)];
-    // A group that currently holds only this one card would be deleted (now
-    // empty) the instant the card is pulled out for the move -- so it's not
-    // a valid destination for its OWN sole occupant. A real UI would never
-    // offer this as a choice; exclude it here rather than treat the engine's
-    // resulting error as a rearrange-invariant failure.
-    const currentGroup = state.groups.find((g) => g.cardIds.includes(cardId));
-    const selfSingleton =
-      currentGroup && currentGroup.cardIds.length === 1
-        ? currentGroup.groupId
-        : null;
-    const eligibleGroups = state.groups.filter(
-      (g) => g.groupId !== selfSingleton,
-    );
-
+    // Moving a card into the group that's currently exactly itself (its own
+    // sole occupant) is a legal no-op (#23, fixed) -- no longer excluded
+    // from the random destination pool.
     const destRoll = rng();
     let destination;
     if (destRoll < 0.3) destination = "hand";
-    else if (destRoll < 0.55 || eligibleGroups.length === 0)
-      destination = "new";
+    else if (destRoll < 0.55 || state.groups.length === 0) destination = "new";
     else
       destination =
-        eligibleGroups[Math.floor(rng() * eligibleGroups.length)].groupId;
+        state.groups[Math.floor(rng() * state.groups.length)].groupId;
     E.rearrangeMoveCard(game, cardId, destination);
   }
 
