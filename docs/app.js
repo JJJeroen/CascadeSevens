@@ -386,8 +386,8 @@ function renderRearrangeView() {
         ? cardText(rearrange.cardById[r.rowObligationCardId])
         : null;
     $("tableauHint").textContent = stillOwed
-        ? `(drafting — nothing is final until you commit; click a card, then click a group to move it there — you still owe ${stillOwed} from the row this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
-        : "(drafting — nothing is final until you commit; click a card, then click a group to move it there)";
+        ? `(drafting — nothing is final until you commit; click a card, then click a group -- or any card already in it -- to move it there — you still owe ${stillOwed} from the row this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
+        : "(drafting — nothing is final until you commit; click a card, then click a group -- or any card already in it -- to move it there)";
     const el = $("tableau");
     el.innerHTML = "";
     const state = CascadeEngine.rearrangeState(g);
@@ -419,6 +419,27 @@ function renderRearrangeView() {
             });
             cardEl.addEventListener("click", (ev) => {
                 ev.stopPropagation();
+                // A group's own border is the intended "move it here" target, but
+                // once a group holds even one card, that border shrinks to the
+                // meld box's ~6px padding -- a real miss target, confirmed by a
+                // live report: creating a new group with one card left almost no
+                // clickable border to drop a second card onto, so the tap landed
+                // on the card itself and silently dropped the pending selection
+                // instead. If a DIFFERENT card is already selected, clicking any
+                // card in this group now moves it here too, same as clicking the
+                // group's border -- clicking the group is still "targeted", it's
+                // just also reachable via any card already sitting in it.
+                if (rearrangeSelectedCardId && rearrangeSelectedCardId !== cardId) {
+                    try {
+                        CascadeEngine.rearrangeMoveCard(g, rearrangeSelectedCardId, gr.groupId);
+                        rearrangeSelectedCardId = null;
+                        render();
+                    }
+                    catch (e) {
+                        showError(errMsg(e));
+                    }
+                    return;
+                }
                 rearrangeSelectedCardId =
                     rearrangeSelectedCardId === cardId ? null : cardId;
                 render();
