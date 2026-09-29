@@ -1,10 +1,11 @@
-// Critical-tier: four-of-a-kind as an alternate come-out route (DESIGN.md
-// §2.4 -- "four cards of the same rank, regardless of point value"). A
-// four-of-a-kind of low cards (e.g. four 2s = 20 points) satisfies come-out
-// on its own even though it's well under the normal 40-point bar. Confirmed
-// by grep before writing this file: zero matches for "fourOfAKind" (or any
-// equivalent) existed anywhere in tests/ -- this named rule had no coverage
-// at all.
+// Critical-tier: four-of-a-kind is NOT an alternate come-out route (reverted
+// 2026-09-29 per a designer/Tommer request relayed by the user -- see
+// DESIGN.md §2.4/§3 decision 21). Come-out is score-threshold-only now: a
+// four-of-a-kind of low cards (e.g. four 2s = 20 points) is just an ordinary
+// 20-point meld toward the 40-point bar, same as any other set or run. This
+// file originally covered the opposite (pre-reversal) behavior; updated in
+// place rather than deleted, since the "does a 4-card meld get accepted at
+// all" coverage (the last check below) is still real and still needed.
 import { CascadeEngine } from "../docs/engine.js";
 const E = CascadeEngine;
 function card(rank, suit) {
@@ -31,33 +32,36 @@ function freshGameAtPart2() {
   return game;
 }
 
-check("four-of-a-kind comes out immediately regardless of point total", () => {
-  const game = freshGameAtPart2();
-  const r = game.round;
-  r.hands[0] = [
-    card("2", "H"),
-    card("2", "D"),
-    card("2", "C"),
-    card("2", "S"),
-    card("9", "H"),
-  ];
+check(
+  "a four-of-a-kind below 40 points does NOT come out on its own (reverted shortcut)",
+  () => {
+    const game = freshGameAtPart2();
+    const r = game.round;
+    r.hands[0] = [
+      card("2", "H"),
+      card("2", "D"),
+      card("2", "C"),
+      card("2", "S"),
+      card("9", "H"),
+    ];
 
-  E.layNewMeld(game, [
-    { cardId: "2H" },
-    { cardId: "2D" },
-    { cardId: "2C" },
-    { cardId: "2S" },
-  ]);
+    E.layNewMeld(game, [
+      { cardId: "2H" },
+      { cardId: "2D" },
+      { cardId: "2C" },
+      { cardId: "2S" },
+    ]);
 
-  if (r.comeOutAccum[0] !== 20)
-    throw new Error(
-      "accum should just be the meld value (20), got " + r.comeOutAccum[0],
-    );
-  if (!r.comeOut[0])
-    throw new Error(
-      "player should have come out via four-of-a-kind despite only 20 points",
-    );
-});
+    if (r.comeOutAccum[0] !== 20)
+      throw new Error(
+        "accum should just be the meld value (20), got " + r.comeOutAccum[0],
+      );
+    if (r.comeOut[0])
+      throw new Error(
+        "a 20-point four-of-a-kind should NOT trigger come-out on its own anymore -- only the 40-point threshold does",
+      );
+  },
+);
 
 check(
   "control: an ordinary 3-card set below 40 points does NOT come out",
@@ -86,15 +90,15 @@ check(
 );
 
 check(
-  "four-of-a-kind with a joker standing in still counts as four cards for the shortcut",
+  "a 4-slot meld (3 real cards + 1 joker) is still valid input to layNewMeld",
   () => {
     const game = freshGameAtPart2();
     const r = game.round;
-    // 3 reals of low value + 1 joker: value alone (5+5+5+50=65) would already
-    // cross 40, so also prove the shortcut path specifically by using cards
-    // that make BOTH routes true at once is not a clean isolation -- instead
-    // confirm isFourOfAKind is computed from slot COUNT (4), not real-card
-    // count, by checking the meld actually recorded 4 slots.
+    // 3 reals of low value + 1 joker: value alone (5+5+5+50=65) crosses 40
+    // on its own, so this comes out via the ordinary threshold -- the point
+    // here is just confirming a 4-slot (3 real + 1 joker) set is accepted
+    // and scored correctly, now that there's no separate "4 slots" shortcut
+    // to also exercise.
     r.hands[0] = [
       card("2", "H"),
       card("2", "D"),
@@ -112,7 +116,7 @@ check(
       throw new Error("meld should have 4 slots (3 real + 1 joker)");
     if (!r.comeOut[0])
       throw new Error(
-        "should have come out (crosses 40 via value here regardless, but confirms 4-slot melds are accepted)",
+        "should have come out via the 40-point threshold (65 points here), confirming 4-slot melds are accepted and scored",
       );
   },
 );
