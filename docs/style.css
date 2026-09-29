@@ -300,15 +300,20 @@ h2 {
   cursor: pointer;
 }
 .hand .card.selected {
-  /* No z-index here (deliberately, #40 follow-up): raising a card above its
-     neighbors made its full-width box the topmost hit target across every
-     card it geometrically overlaps -- not just its own exposed strip -- so
-     selecting one card silently blocked tapping any of the next couple of
-     cards in the overlapping fan. A plain lift is enough of a "this is
-     selected" cue without stealing its neighbors' clickable area; the
-     selected card can still be partly tucked under the next unselected one,
-     same as any other overlap in the fan. */
-  transform: translateY(-12px);
+  /* Lift via margin, not transform (#40, second follow-up): removing
+     z-index wasn't enough on its own. ANY transform -- even with no
+     z-index set -- implicitly promotes an element above its plain,
+     untransformed siblings in paint order, regardless of DOM order (per
+     the CSS stacking spec, a transformed static element paints as if it
+     were positioned with z-index:0, a layer above ordinary in-flow static
+     content). So `translateY` alone still put the selected card on top of
+     a later, unselected, overlapping neighbor. A margin-top shift moves the
+     box the same way without creating a stacking context, so the selected
+     card stays in the same paint layer as everything else -- it can still
+     end up tucked under a later unselected neighbor, same as any other
+     overlap in the fan, which is the point: it should look raised, not
+     jump in front. */
+  margin-top: -12px;
   box-shadow: 0 0 0 3px var(--accent);
 }
 /* Bigger + overlapping, scoped to the real (human) hand only -- #aiHand
@@ -385,6 +390,18 @@ h2 {
   padding: 1.5rem;
   max-width: 480px;
   width: 90%;
+}
+/* Round/game-end notification content (#modalRoot was reserved but unused
+   until now -- see the postmortem above about its [hidden] handling). Fixed
+   to the viewport center regardless of scroll position, unlike the old
+   top-of-page #banner, which was easy to scroll past and mistake for the
+   app being stuck. */
+#modalBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  text-align: center;
 }
 .modal-box h3 {
   margin-top: 0;

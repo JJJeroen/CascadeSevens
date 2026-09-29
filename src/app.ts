@@ -244,23 +244,32 @@ function renderAiHand(): void {
 function renderBanner(): void {
   const banner = $("banner");
   banner.innerHTML = "";
+  const modalRoot = $("modalRoot");
+  const modalBox = $("modalBox");
+  modalBox.innerHTML = "";
+  modalRoot.hidden = true;
   const g = game as Game;
   const r = g.round as Round;
 
+  // Round/game-end is a real interrupting event, not an inline status line
+  // -- it gets the centered modal popup (fixed to the viewport, not the
+  // page), not the top-of-page #banner, which was easy to scroll past and
+  // mistake for the app having silently stopped responding.
   if (g.gameOver) {
-    banner.hidden = false;
+    modalRoot.hidden = false;
     const who = g.winner === 0 ? "You" : "The AI";
-    banner.appendChild(
+    modalBox.appendChild(
       textEl(
         `${who} won the game! Final: P1 ${g.scores[0]} — P2 ${g.scores[1]}.`,
       ),
     );
-    banner.appendChild(button("Start New Game", newGame));
+    modalBox.appendChild(button("Start New Game", newGame));
+    banner.hidden = true;
     return;
   }
 
   if (r.ended) {
-    banner.hidden = false;
+    modalRoot.hidden = false;
     const rs = r.roundScores as [number, number];
     let msg = `Round ${g.roundNumber} over (${r.endReason}). `;
     msg +=
@@ -268,8 +277,9 @@ function renderBanner(): void {
         ? `Player ${r.roundWinner + 1} won the round. `
         : "Closed pile ran out. ";
     msg += `Round scores — P1 ${rs[0]}, P2 ${rs[1]}.`;
-    banner.appendChild(textEl(msg));
-    banner.appendChild(button("Next Round", nextRound));
+    modalBox.appendChild(textEl(msg));
+    modalBox.appendChild(button("Next Round", nextRound));
+    banner.hidden = true;
     return;
   }
 
@@ -777,6 +787,45 @@ function cleanupDrag(ds: DragState): void {
   updateDragOverHighlight(ds.hoverTarget, null);
 }
 
+// Adds as many of the given hand cards to an existing meld as legally
+// attach, one at a time via the same addToMeld the single-card path uses --
+// there's no engine-level "add several cards at once" action. Order matters
+// for a run (e.g. extending 8-9-10 with 6 and 7 only works 7-then-6), so
+// this retries in passes until a full pass makes no further progress,
+// rather than requiring the caller (or the user) to get the order right.
+function addMultipleToMeld(
+  g: Game,
+  meldId: string,
+  cardIds: string[],
+): { addedCount: number; remaining: string[] } {
+  const remaining = new Set(cardIds);
+  let progress = true;
+  while (progress && remaining.size > 0) {
+    progress = false;
+    for (const id of remaining) {
+      const meld = g.round?.tableau.find((m) => m.id === meldId);
+      const card = g.round?.hands[0].find((c) => c.id === id);
+      if (!meld || !card) {
+        remaining.delete(id);
+        continue;
+      }
+      const resolved = CascadeEngine.autoResolveAddToMeld(meld, card);
+      if (!resolved) continue; // doesn't fit (yet) -- leave it for a later pass
+      try {
+        CascadeEngine.addToMeld(g, meldId, id, resolved.wildAs);
+        remaining.delete(id);
+        progress = true;
+      } catch {
+        remaining.delete(id); // fits the shape but an engine guard rejected it -- don't retry
+      }
+    }
+  }
+  return {
+    addedCount: cardIds.length - remaining.size,
+    remaining: [...remaining],
+  };
+}
+
 function resolveDrop(ds: DragState): void {
   const g = game as Game;
   const r = g.round as Round;
@@ -812,31 +861,44 @@ function resolveDrop(ds: DragState): void {
     return; // no target and can't play -> just snap back, no message needed
   }
 
-  // Dragging one card out of an active multi-card selection onto the
-  // tableau (a meld or empty space) reads as "lay these as a new meld" --
-  // matching what a player who's already selected 3+ cards actually means
-  // by dragging any one of them tableau-ward, not "move just this card."
-  // Reuses the exact same resolution the "Lay new meld" button does.
-  if (
-    selectedHandCardIds.size > 1 &&
-    selectedHandCardIds.has(card.id) &&
-    (target?.kind === "meld" || target?.kind === "tableau-empty")
-  ) {
-    const ids = [...selectedHandCardIds];
-    const resolved = CascadeEngine.autoResolveMeld(r.hands[0], ids);
-    if (!resolved.ok) {
-      showError(resolved.error ?? "Not a valid meld.");
+  // Dragging one card out of an active multi-card selection: where it
+  // lands decides whether that means "lay these as a new meld" or "add all
+  // of these to that meld" -- empty tableau space has no existing meld to
+  // add to, so it can only mean the former; dropping ON a specific meld
+  // unambiguously points at it, so it means the latter, not "ignore the
+  // meld I dropped on and start a new one somewhere else instead."
+  if (selectedHandCardIds.size > 1 && selectedHandCardIds.has(card.id)) {
+    if (target?.kind === "tableau-empty") {
+      const ids = [...selectedHandCardIds];
+      const resolved = CascadeEngine.autoResolveMeld(r.hands[0], ids);
+      if (!resolved.ok) {
+        showError(resolved.error ?? "Not a valid meld.");
+        return;
+      }
+      try {
+        CascadeEngine.layNewMeld(g, resolved.slots);
+        selectedHandCardIds.clear();
+        targetedMeldId = null;
+        afterHumanAction();
+      } catch (e) {
+        showError(errMsg(e));
+      }
       return;
     }
-    try {
-      CascadeEngine.layNewMeld(g, resolved.slots);
-      selectedHandCardIds.clear();
-      targetedMeldId = null;
+    if (target?.kind === "meld") {
+      const ids = [...selectedHandCardIds];
+      const result = addMultipleToMeld(g, target.meldId, ids);
+      if (result.addedCount === 0) {
+        showError("No legal spot for any of the selected cards in this meld.");
+        return;
+      }
+      const stillRemaining = new Set(result.remaining);
+      for (const id of ids) {
+        if (!stillRemaining.has(id)) selectedHandCardIds.delete(id);
+      }
       afterHumanAction();
-    } catch (e) {
-      showError(errMsg(e));
+      return;
     }
-    return;
   }
 
   if (target?.kind === "tableau-empty") {
@@ -1051,7 +1113,7 @@ function renderControls(): void {
       isHumanTurn &&
       r.part === 2 &&
       comeOut &&
-      selected.length === 1 &&
+      selected.length >= 1 &&
       targetedMeldId
     );
   const targetedHasJoker =
@@ -1158,26 +1220,20 @@ $("layMeldBtn").addEventListener("click", () => {
 });
 
 $("addToMeldBtn").addEventListener("click", () => {
-  const hand = (game as Game).round?.hands[0] as Card[];
-  const cardId = [...selectedHandCardIds][0];
-  const card = hand.find((c) => c.id === cardId) as Card;
-  const meld = (game as Game).round?.tableau.find(
-    (m) => m.id === targetedMeldId,
-  ) as Meld;
-  const resolved = CascadeEngine.autoResolveAddToMeld(meld, card);
-  if (!resolved) return showError("No legal spot for that joker in this meld.");
-  try {
-    CascadeEngine.addToMeld(
-      game as Game,
-      targetedMeldId as string,
-      cardId,
-      resolved.wildAs,
-    );
-    selectedHandCardIds.clear();
-    afterHumanAction();
-  } catch (e) {
-    showError(errMsg(e));
+  // Accepts any number of selected cards, not just one -- e.g. holding 6D
+  // and 7D with an 8-9-10D meld targeted adds both in one click, in
+  // whichever order makes each individually legal (see addMultipleToMeld).
+  const ids = [...selectedHandCardIds];
+  const result = addMultipleToMeld(game as Game, targetedMeldId as string, ids);
+  if (result.addedCount === 0) {
+    showError("No legal spot for any of the selected card(s) in this meld.");
+    return;
   }
+  const stillRemaining = new Set(result.remaining);
+  for (const id of ids) {
+    if (!stillRemaining.has(id)) selectedHandCardIds.delete(id);
+  }
+  afterHumanAction();
 });
 
 $("swapJokerBtn").addEventListener("click", () => {
