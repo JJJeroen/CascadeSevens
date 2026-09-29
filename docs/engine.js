@@ -1182,28 +1182,40 @@ function endRoundPileEmpty(game) {
 }
 function scoreRound(game) {
     const r = game.round;
-    const roundScores = [0, 0];
+    const meldPoints = [0, 0];
     for (const meld of r.tableau) {
         for (const slot of meld.slots) {
-            roundScores[slot.ownerId] += pointValue(slot.card.rank);
+            meldPoints[slot.ownerId] += pointValue(slot.card.rank);
         }
     }
+    const roundScores = [meldPoints[0], meldPoints[1]];
+    // Per-player breakdown label, logged alongside the totals below -- added
+    // after a live-play report that the log only ever showed the final round
+    // scores, with no way to see how they were actually made up (meld points
+    // vs. the winner bonus vs. a hand penalty) without redoing the math by hand.
+    const breakdown = ["", ""];
     if (r.roundWinner !== null) {
         roundScores[r.roundWinner] += 50;
+        breakdown[r.roundWinner] = "winner bonus +50";
         const loser = other(r.roundWinner);
         const penalty = r.hands[loser].reduce((s, c) => s + pointValue(c.rank), 0);
         roundScores[loser] -= penalty;
+        breakdown[loser] = `hand penalty -${penalty}`;
     }
     else {
         // pile-empty: both players penalized for their own remaining hand
         for (let p = 0; p < 2; p++) {
             const penalty = r.hands[p].reduce((s, c) => s + pointValue(c.rank), 0);
             roundScores[p] -= penalty;
+            breakdown[p] = `hand penalty -${penalty}`;
         }
     }
     game.scores[0] += roundScores[0];
     game.scores[1] += roundScores[1];
     r.roundScores = roundScores;
+    for (const p of [0, 1]) {
+        logMsg(game, `Player ${p + 1} round score: meld points ${meldPoints[p]}${breakdown[p] ? `, ${breakdown[p]}` : ""} = ${roundScores[p]}.`);
+    }
     logMsg(game, `Round over (${r.endReason}). Round scores: P1 ${roundScores[0]}, P2 ${roundScores[1]}. Totals: P1 ${game.scores[0]}, P2 ${game.scores[1]}.`);
     checkGameEnd(game);
 }

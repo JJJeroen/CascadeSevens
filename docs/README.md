@@ -518,6 +518,35 @@ text was correct, built the resolving group, and committed via a real
 button click, ending with the obligation cleared and the card sitting in
 a new run on the table.
 
+**Sixteenth playtest round (2026-09-28)** — first real playtest on an actual
+Android phone via the Capacitor build (#38). It works, but surfaced real
+touch-UI friction: hand cards should overlap like the open row (currently
+plain `gap` spacing) and be a bit bigger to stay tappable once they do; the
+hand should be reorderable; and the natural instinct holding a card that
+extends a tableau meld was to **drag** it on, which wasn't supported at all.
+Worse, tapping a card *inside* a meld silently meant "pull it out" rather
+than "target this meld" — only the meld's border did the latter, which
+nobody would discover without being told. Asked how far to take a fix, the
+answer was the largest option: full drag-to-play. Implemented as #40 —
+touch-first drag via the Pointer Events API (not native HTML5
+drag-and-drop, which has no real mobile browser support): a drag arms on a
+short hold or a real vertical lift (never on horizontal movement alone, so
+it doesn't fight the hand's own scroll or its new reorder-by-sideways-slide
+gesture), then resolves against whatever's under the pointer on release —
+a meld (add, or swap if dropped specifically on a matching joker), the open
+row (discard), or a new position within the hand (reorder). The
+tap-inside-a-meld ambiguity is fixed directly: it now targets the meld,
+matching the border's behavior; pulling a card out is a drag-out gesture
+instead. This plan went through an adversarial review before implementation
+(a first draft's scroll-vs-drag heuristic would have made the new
+hand-reorder gesture itself indistinguishable from scrolling, and its
+add-vs-swap logic would have silently made plain "add" unreachable whenever
+a meld had a matching joker anywhere in it) — see DESIGN.md §3 decision 20
+for the full writeup. `engine.ts`/`ai.ts` needed zero changes; verified with
+the full 27-file test suite (untouched, all green), a headless-browser
+smoke-test re-run (click-based, unaffected by the new pointer-event system),
+and real on-device testing on the same connected phone.
+
 ## Known simplifications (mock, not final spec)
 
 - **AI is a greedy heuristic**, not the phase-2 AI, and not tuned for a good
