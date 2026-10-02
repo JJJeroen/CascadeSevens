@@ -255,27 +255,28 @@ function afterHumanAction(): void {
   scheduleIfAITurn();
 }
 
+// True only while it's genuinely the AI's move in THIS game. CascadeAI.takeTurn
+// plays for whoever is current without checking, so every delayed AI move
+// must re-check this when its timer fires: a timer left over from a game
+// that was since restarted (or a round that moved on) would otherwise make
+// the AI play the HUMAN's hand -- seen as the browser smoke test randomly
+// finding its cards already melded after rapid "New Game" clicks.
+function isAITurnNow(g: Game): boolean {
+  if (aiDisabled || game !== g || !g.round || g.gameOver || g.round.ended)
+    return false;
+  if (g.round.part === "turn0") return CascadeEngine.turn0CurrentAskee(g) === 1;
+  return g.round.current === 1;
+}
+
 function scheduleIfAITurn(): void {
-  if (aiDisabled || !game || !game.round || game.gameOver || game.round.ended)
-    return;
-  const r = game.round;
-  if (r.part === "turn0") {
-    if (CascadeEngine.turn0CurrentAskee(game) === 1) {
-      setTimeout(() => {
-        if (aiDisabled) return;
-        CascadeAI.takeTurn(game as Game, { onStateChanged: render });
-        scheduleIfAITurn();
-      }, 500);
-    }
-    return;
-  }
-  if (r.current === 1) {
-    setTimeout(() => {
-      if (aiDisabled) return;
-      CascadeAI.takeTurn(game as Game, { onStateChanged: render });
-      scheduleIfAITurn();
-    }, 600);
-  }
+  const g = game;
+  if (!g || !isAITurnNow(g)) return;
+  const delay = g.round?.part === "turn0" ? 500 : 600;
+  setTimeout(() => {
+    if (!isAITurnNow(g)) return;
+    CascadeAI.takeTurn(g, { onStateChanged: render });
+    scheduleIfAITurn();
+  }, delay);
 }
 
 // --- Rendering -------------------------------------------------------------
@@ -1511,6 +1512,7 @@ $("cancelRearrangeBtn").addEventListener("click", () => {
 if (new URLSearchParams(location.search).has("test")) {
   (window as unknown as Record<string, unknown>).__cascadeTest = {
     getGame: () => game,
+    turn0Askee: () => CascadeEngine.turn0CurrentAskee(game as Game),
     render,
     disableAI: () => {
       aiDisabled = true;
