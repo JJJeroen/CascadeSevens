@@ -119,7 +119,7 @@ export interface Game {
 // tryAsSet/tryAsRun/validateNewMeldSelection: identifies WHAT type of meld a
 // given (already-assigned) set of cards forms, without materializing slots.
 export type MeldSelectionCheck =
-  | { ok: true; type: "set"; rank: RealRank; isFourOfAKind: boolean }
+  | { ok: true; type: "set"; rank: RealRank }
   | { ok: true; type: "run"; suit: Suit; aceHigh: boolean }
   | { ok: false; error: string };
 

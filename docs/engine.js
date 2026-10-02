@@ -491,7 +491,7 @@ function tryAsSet(cards) {
             return { ok: false, error: "Joker must stand in for the set rank." };
         }
     }
-    return { ok: true, type: "set", rank, isFourOfAKind: cards.length === 4 };
+    return { ok: true, type: "set", rank };
 }
 function tryAsRun(cards) {
     const nonJokers = cards.filter((c) => c.real.rank !== "JOKER");
@@ -598,8 +598,7 @@ function layNewMeld(game, cardSelections) {
     const value = meldValueFromSlots(slots);
     if (!r.comeOut[r.current]) {
         r.comeOutAccum[r.current] += value;
-        const fourOfAKind = result.type === "set" && result.isFourOfAKind;
-        if (r.comeOutAccum[r.current] >= 40 || fourOfAKind) {
+        if (r.comeOutAccum[r.current] >= 40) {
             r.comeOut[r.current] = true;
             logMsg(game, `Player ${r.current + 1} has come out!`);
         }

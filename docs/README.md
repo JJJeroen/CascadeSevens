@@ -36,7 +36,7 @@ node tests/run-all.js
 
 This runs all `rules_check*.js` targeted unit tests (one file per feature
 area — Turn 0, joker repositioning, rearrange sessions, ownership, round/
-game-end scoring, four-of-a-kind come-out, etc.) plus every `sim_*.js`
+game-end scoring, the come-out threshold, etc.) plus every `sim_*.js`
 headless simulation/fuzz harness: `sim2.js`/`sim_stress.js` (AI-vs-AI games,
 checking for turn stalls and card-conservation violations), `sim_turn0.js`
 (Turn 0 acceptance under randomized play — `ai.js`'s own heuristic always
@@ -113,8 +113,9 @@ Play Store listing work. Those are scoped to #5 (Epic: Google Play Release).
 Full ruleset from DESIGN.md as of the 2026-07-26 revision: deck/deal, the
 asymmetric Turn 0 starter-card exchange (§2.6), draw from closed pile or
 open-row cascade pickup (§2.5 — available every turn, not gated on come-out),
-the 40-point/four-of-a-kind come-out gate for laying new melds (§2.4), new
-melds (sets and runs, Ace anchoring either end with no wraparound), adding to
+the 40-point come-out gate for laying new melds (§2.4, score-threshold-only
+as of §3 decision 21 — no more four-of-a-kind shortcut), new melds (sets and
+runs, Ace anchoring either end with no wraparound), adding to
 any meld on the shared tableau, **full tableau rearrangement** — pull one or
 more cards back out of any meld and re-lay them elsewhere (§2.3/§3 decision
 2; click a card inside a meld to pull just that one, or target a meld and use
@@ -546,6 +547,22 @@ for the full writeup. `engine.ts`/`ai.ts` needed zero changes; verified with
 the full 27-file test suite (untouched, all green), a headless-browser
 smoke-test re-run (click-based, unaffected by the new pointer-event system),
 and real on-device testing on the same connected phone.
+
+**Seventeenth round (2026-09-29)** — Tommer requested (relayed by the user)
+reverting the come-out rule to score-threshold-only: a player can only come
+out by reaching 40+ points across their own newly-laid melds, removing the
+"four of a kind instantly comes out regardless of point value" alternate
+route. This has been part of the original §2.4 spec since the very first
+draft, not a later addition, so this is a genuine reversal rather than a bug
+fix — now DESIGN.md §3 decision 21. `engine.ts`'s come-out check dropped the
+`isFourOfAKind` branch entirely, and `isFourOfAKind` itself is removed as
+dead code (nothing else in the engine, AI, or UI ever read it — confirmed by
+grep before removing it). `ai.ts` needed no changes: it only reasons about
+`hasComeOut`/`comeOutAccum` generically. `tests/rules_check17.js` (the
+file's original, only-ever purpose was covering this exact route) was
+updated in place rather than deleted — its main check now asserts a
+four-of-a-kind under 40 points does *not* come out, the inverse of what it
+asserted before.
 
 ## Known simplifications (mock, not final spec)
 
