@@ -25,6 +25,7 @@ let dragState = null;
 let suppressNextClick = false;
 let handDisplayOrder = [];
 let autoScrollHandle = null;
+let aiDisabled = false; // only ever set via the ?test=1 hook at the bottom
 function $(id) {
     const el = document.getElementById(id);
     if (!el)
@@ -34,9 +35,46 @@ function $(id) {
 function errMsg(e) {
     return e instanceof Error ? e.message : String(e);
 }
-function showError(msg) {
-    alert(msg);
+function fillDialog(box, title, body, actions, close) {
+    box.innerHTML = "";
+    const h = document.createElement("h3");
+    h.className = "dialog-title";
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.className = "dialog-body";
+    p.textContent = body;
+    const row = document.createElement("div");
+    row.className = "modal-actions";
+    actions.forEach((a) => {
+        const b = button(a.label, () => {
+            close();
+            a.onClick?.();
+        });
+        if (a.secondary)
+            b.classList.add("secondary");
+        row.appendChild(b);
+    });
+    box.append(h, p, row);
 }
+function closeDialog() {
+    $("dialogRoot").hidden = true;
+    $("dialogBox").innerHTML = "";
+}
+// Lives in its own #dialogRoot (not #modalRoot) because render() rebuilds
+// #modalRoot on every state change -- an error raised mid-action would be
+// wiped by the very next render.
+function showDialog(title, body, actions = [{ label: "OK" }]) {
+    fillDialog($("dialogBox"), title, body, actions, closeDialog);
+    $("dialogRoot").hidden = false;
+    $("dialogBox").querySelector("button")?.focus();
+}
+function showError(msg) {
+    showDialog("Can't do that", msg);
+}
+document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !$("dialogRoot").hidden)
+        closeDialog();
+});
 function suitClass(card) {
     if (card.rank === "JOKER")
         return "joker";
@@ -61,7 +99,21 @@ function buildCardEl(card, opts = {}) {
     if (opts.pickable)
         el.classList.add("pickable");
     if (opts.wildAs) {
-        el.textContent = `J→${opts.wildAs.rank}${opts.wildAs.suit ? SUIT_SYMBOL[opts.wildAs.suit] : ""}`;
+        // A joker standing in for a card shows that card's rank/suit in the
+        // normal corner index (so it stays readable when melds overlap) and is
+        // marked as a joker by its dashed border + badge (see .card.wild).
+        el.classList.add("wild");
+        const rankSpan = document.createElement("span");
+        rankSpan.className = "rank";
+        rankSpan.textContent = opts.wildAs.rank;
+        el.appendChild(rankSpan);
+        if (opts.wildAs.suit) {
+            const suitSpan = document.createElement("span");
+            suitSpan.className = "suit";
+            suitSpan.textContent = SUIT_SYMBOL[opts.wildAs.suit];
+            el.appendChild(suitSpan);
+        }
+        el.title = `Joker standing in for ${opts.wildAs.rank}${opts.wildAs.suit ? SUIT_SYMBOL[opts.wildAs.suit] : ""}`;
     }
     else if (card.rank === "JOKER") {
         el.textContent = "JOKER";
@@ -122,12 +174,14 @@ function afterHumanAction() {
     scheduleIfAITurn();
 }
 function scheduleIfAITurn() {
-    if (!game || !game.round || game.gameOver || game.round.ended)
+    if (aiDisabled || !game || !game.round || game.gameOver || game.round.ended)
         return;
     const r = game.round;
     if (r.part === "turn0") {
         if (CascadeEngine.turn0CurrentAskee(game) === 1) {
             setTimeout(() => {
+                if (aiDisabled)
+                    return;
                 CascadeAI.takeTurn(game, { onStateChanged: render });
                 scheduleIfAITurn();
             }, 500);
@@ -136,6 +190,8 @@ function scheduleIfAITurn() {
     }
     if (r.current === 1) {
         setTimeout(() => {
+            if (aiDisabled)
+                return;
             CascadeAI.takeTurn(game, { onStateChanged: render });
             scheduleIfAITurn();
         }, 600);
@@ -162,11 +218,42 @@ function render() {
             "(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)";
         renderTableau();
     }
+    fitMeldOverlaps();
     renderHand();
     renderAiHand();
     renderControls();
     renderLog();
 }
+// Meld cards overlap (see .meld in style.css). A long run -- 12-13 cards --
+// would still overflow a phone-width table at the default overlap, so tighten
+// the overlap for just that meld until it fits, down to a floor that still
+// leaves the corner index readable (past that, the tableau scrolls).
+const MELD_CARD_W = 40;
+const MELD_OVERLAP_DEFAULT = 16;
+const MELD_OVERLAP_MAX = 22; // leaves an 18px strip
+function fitMeldOverlaps() {
+    const tableau = $("tableau");
+    tableau.querySelectorAll(".meld").forEach((box) => {
+        const wrap = box.querySelector(".meld-cards");
+        if (!wrap)
+            return;
+        wrap.style.removeProperty("--meld-overlap");
+        const n = wrap.children.length;
+        if (n < 2)
+            return;
+        const chrome = box.offsetWidth - wrap.offsetWidth; // meld padding + border
+        const avail = tableau.clientWidth - chrome;
+        // total width = n*cardW - (n-1)*overlap; solve for the overlap that fits
+        const needed = (n * MELD_CARD_W - avail) / (n - 1);
+        const overlap = Math.min(MELD_OVERLAP_MAX, Math.max(MELD_OVERLAP_DEFAULT, needed));
+        if (overlap > MELD_OVERLAP_DEFAULT)
+            wrap.style.setProperty("--meld-overlap", `${overlap}px`);
+    });
+}
+window.addEventListener("resize", () => {
+    if (game)
+        fitMeldOverlaps();
+});
 // Debug-only: shows the AI's actual hand face-up for testing. The real
 // game would never reveal an opponent's hand -- this exists purely so
 // the designer can see what the AI was holding when reviewing its plays.
@@ -196,22 +283,18 @@ function renderBanner() {
     if (g.gameOver) {
         modalRoot.hidden = false;
         const who = g.winner === 0 ? "You" : "The AI";
-        modalBox.appendChild(textEl(`${who} won the game! Final: P1 ${g.scores[0]} — P2 ${g.scores[1]}.`));
-        modalBox.appendChild(button("Start New Game", newGame));
+        fillDialog(modalBox, `${who} won the game!`, `Final: P1 ${g.scores[0]} — P2 ${g.scores[1]}.`, [{ label: "Start New Game", onClick: newGame }], () => { });
         banner.hidden = true;
         return;
     }
     if (r.ended) {
         modalRoot.hidden = false;
         const rs = r.roundScores;
-        let msg = `Round ${g.roundNumber} over (${r.endReason}). `;
-        msg +=
-            r.roundWinner !== null
-                ? `Player ${r.roundWinner + 1} won the round. `
-                : "Closed pile ran out. ";
+        let msg = r.roundWinner !== null
+            ? `Player ${r.roundWinner + 1} won the round. `
+            : "Closed pile ran out. ";
         msg += `Round scores — P1 ${rs[0]}, P2 ${rs[1]}.`;
-        modalBox.appendChild(textEl(msg));
-        modalBox.appendChild(button("Next Round", nextRound));
+        fillDialog(modalBox, `Round ${g.roundNumber} over (${r.endReason})`, msg, [{ label: "Next Round", onClick: nextRound }], () => { });
         banner.hidden = true;
         return;
     }
@@ -267,23 +350,28 @@ function renderOpenRow() {
                 ? () => {
                     const hand = r.hands[0];
                     const scoopCards = r.openRow.slice(idx); // this card + everything discarded after it
+                    const take = () => {
+                        try {
+                            CascadeEngine.drawFromOpenRow(g, card.id);
+                            render();
+                            if (g.round.ended)
+                                return;
+                            scheduleIfAITurn();
+                        }
+                        catch (e) {
+                            showError(errMsg(e));
+                        }
+                    };
                     if (!CascadeAI.canResolvePickup(hand, scoopCards, card.id)) {
                         const scoop = scoopCards.length;
-                        const ok = confirm(`Taking this card would also scoop ${scoop} card(s), and ${cardText(card)} must be melded this turn — ` +
-                            `but no legal meld for it seems possible with your current hand. Take it anyway?`);
-                        if (!ok)
-                            return;
+                        showDialog("Take this card anyway?", `Taking this card would also scoop ${scoop} card(s), and ${cardText(card)} must be melded this turn — ` +
+                            `but no legal meld for it seems possible with your current hand.`, [
+                            { label: "Cancel", secondary: true },
+                            { label: "Take it anyway", onClick: take },
+                        ]);
+                        return;
                     }
-                    try {
-                        CascadeEngine.drawFromOpenRow(g, card.id);
-                        render();
-                        if (g.round.ended)
-                            return;
-                        scheduleIfAITurn();
-                    }
-                    catch (e) {
-                        showError(errMsg(e));
-                    }
+                    take();
                 }
                 : null,
         }));
@@ -958,7 +1046,7 @@ function renderControls() {
                 ? `${label} (meld it or discard it back)`
                 : `${label} (must meld)`;
         });
-        obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? ' (stuck? use "Undo pickup")' : ""}`;
+        obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : ""}`;
     }
     else {
         obligEl.hidden = true;
@@ -1218,4 +1306,17 @@ $("cancelRearrangeBtn").addEventListener("click", () => {
         showError(errMsg(e));
     }
 });
+// Browser-test hook (tests/layout_large_hand.js): with ?test=1 the page
+// exposes its game state and render(), and can switch the AI off, so a test
+// can build an extreme position (a 30-card hand, a 13-card run) directly
+// instead of hoping random play reaches one. Absent from normal use.
+if (new URLSearchParams(location.search).has("test")) {
+    window.__cascadeTest = {
+        getGame: () => game,
+        render,
+        disableAI: () => {
+            aiDisabled = true;
+        },
+    };
+}
 newGame();
