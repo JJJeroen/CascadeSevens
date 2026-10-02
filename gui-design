@@ -59,3 +59,9 @@ help
 more?
 
 
+figma 
+team = Troje > has members
+project = folder = 'Team project' > share \ access settings must contain 'Anyone in Troje'
+file = tomnjerryapps > share \ access settings must contain 'Anyone in Troje' to avoid override of upper access > in spite of 'People from Team project'-setting
+
+
