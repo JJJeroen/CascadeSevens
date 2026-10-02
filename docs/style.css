@@ -158,7 +158,7 @@ h2 {
 .tableau {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.5rem;
   /* Its own bounded, scrollable region (added #40) -- without this the
      tableau just grows the whole page taller as melds accumulate, forcing
      constant scrolling past it to reach the hand/controls below. Also gives
@@ -188,9 +188,26 @@ h2 {
   border-style: solid;
   border-color: #d9534f;
 }
+/* Compact melds: the shared table is where cards pile up fastest, so meld
+   cards are smaller than hand cards and overlap each other, like the other
+   rummy/gin apps do for laid-down sets. Rank/suit sit in the top-left
+   corner index, so each card still shows ~24px of readable strip. */
+.meld {
+  padding: 0.3rem;
+}
 .meld .meld-cards {
   display: flex;
-  gap: 0.35rem;
+  /* cancels the first card's negative margin below; --meld-overlap is only
+     set (by fitMeldOverlaps) on a meld too long to fit at the default */
+  padding-left: var(--meld-overlap, 16px);
+}
+.meld .card {
+  width: 40px;
+  height: 58px;
+  margin-left: calc(-1 * var(--meld-overlap, 16px));
+  padding: 2px 0 0 4px;
+  font-size: 0.85rem;
+  border-radius: 5px;
 }
 
 .card {
@@ -215,6 +232,7 @@ h2 {
   flex-shrink: 0;
   box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
   user-select: none;
+  position: relative;
 }
 /* Four-color deck: spades black (default), clubs green, hearts red,
    diamonds blue -- easier to tell apart at a glance than the standard
@@ -234,13 +252,38 @@ h2 {
 .card.joker {
   background: #e9dfc4;
 }
+/* Corner index: bold and sized up so rank + suit stay readable when cards
+   overlap. All four suit colors measure >= 5.2:1 against --card-bg (WCAG
+   asks 4.5:1 for anything read quickly). */
 .card .rank {
-  font-size: 0.85em;
+  font-size: 1.05em;
+  font-weight: 800;
   line-height: 1.1;
 }
 .card .suit {
-  font-size: 1.5em;
+  font-size: 1.4em;
   line-height: 1;
+}
+/* A joker standing in for another card: shows that card's index, marked as
+   a joker by the dashed border and the badge. */
+.card.wild {
+  border-style: dashed;
+  border-width: 2px;
+  padding: 1px 0 0 3px;
+}
+.card.wild::after {
+  content: "J";
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--black);
+  color: #fff;
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
 }
 .card.owner-1 {
   outline: 2px solid #6fbf73;
@@ -254,7 +297,7 @@ h2 {
 /* Only the open row gets the overlapping "cascade" look — it's a visual
    metaphor for that specific mechanic, not a general card style. */
 .open-row .card {
-  margin-left: -30px;
+  margin-left: -26px;
   cursor: default;
 }
 .open-row .card:first-child {
@@ -320,16 +363,39 @@ h2 {
    shares the .hand class for its debug-only row, which doesn't need either
    the larger touch targets or the overlap (added #40; an earlier version
    enlarged .card globally, which also ballooned every meld in the tableau). */
+/* Hand: each card keeps >= 44px of its width visible (the minimum tappable
+   strip), and a hand that doesn't fit wraps onto a second row rather than
+   overlapping tighter or scrolling sideways. Every card has the same
+   negative margin; the container's left padding cancels it, so the first
+   card of EVERY row lines up. 56px cards with a 12px overlap give the 44px
+   strip, and 7 cards then need 6*44 + 56 = 320px -- just inside the ~322px a
+   360px-wide phone leaves for the hand (tests/layout_large_hand.js checks
+   it). */
 #hand {
-  min-height: 108px;
+  min-height: 96px;
+  flex-wrap: wrap;
+  overflow-x: visible;
+  padding-left: 12px;
+  row-gap: 14px; /* room for a selected card's 12px lift */
 }
 #hand .card {
-  width: 64px;
-  height: 92px;
-  margin-left: -34px;
+  width: 56px;
+  height: 80px;
+  margin-left: -12px;
 }
-#hand .card:first-child {
-  margin-left: 0;
+
+/* Undo: round icon button, first in the bottom button row (bottom-left). */
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  border: 1px solid var(--muted);
 }
 
 .card.dragging {
@@ -359,6 +425,7 @@ h2 {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .log-panel #log {
@@ -383,6 +450,9 @@ h2 {
   justify-content: center;
   z-index: 10;
 }
+.modal-root.dialog-root {
+  z-index: 20;
+}
 .modal-box {
   background: var(--bg-panel);
   border: 1px solid var(--accent);
@@ -390,27 +460,40 @@ h2 {
   padding: 1.5rem;
   max-width: 480px;
   width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
 }
 /* Round/game-end notification content (#modalRoot was reserved but unused
    until now -- see the postmortem above about its [hidden] handling). Fixed
    to the viewport center regardless of scroll position, unlike the old
    top-of-page #banner, which was easy to scroll past and mistake for the
    app being stuck. */
-#modalBox {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  text-align: center;
+/* Every popup (error, confirm, round end, game end) uses the same
+   title / body / button-row layout. */
+.modal-box .dialog-title {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--accent);
 }
-.modal-box h3 {
-  margin-top: 0;
+.modal-box .dialog-body {
+  margin: 0;
+  white-space: pre-line; /* multi-line messages (rearrange-commit problems) */
+  line-height: 1.4;
 }
 .modal-box .modal-actions {
   display: flex;
   gap: 0.5rem;
-  justify-content: flex-end;
-  margin-top: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+button.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--muted);
 }
 
 @media (max-width: 480px) {
@@ -439,5 +522,8 @@ h2 {
   .controls button {
     flex: 1 1 auto;
     font-size: 0.85rem;
+  }
+  .controls .icon-btn {
+    flex: 0 0 44px;
   }
 }

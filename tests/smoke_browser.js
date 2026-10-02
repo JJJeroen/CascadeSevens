@@ -205,6 +205,17 @@ async function finishCdpSetup(child, ws) {
   return { child, ws, send, evalJs };
 }
 
+// Errors now show in the shared in-page dialog (#dialogRoot) instead of a
+// native alert(). Returns its text if one is open, else null. (The old
+// check stubbed window.alert BEFORE navigating, so the stub was discarded
+// by the page load and could never have caught anything.)
+async function readErrorDialog(page) {
+  return page.evalJs(`(() => {
+    const root = document.querySelector("#dialogRoot");
+    return root && !root.hidden ? root.textContent.trim() : null;
+  })()`);
+}
+
 async function clickSelector(page, selector) {
   await page.evalJs(
     `document.querySelector(${JSON.stringify(selector)}).click()`,
@@ -336,9 +347,6 @@ async function main() {
 }
 
 async function runSmokeFlow(page) {
-  await page.evalJs(
-    `window.alert = (m) => { window.__alerts = window.__alerts || []; window.__alerts.push(m); };`,
-  );
   await page.send("Page.navigate", {
     url: `http://localhost:${PORT}/?t=${Date.now()}`,
   });
@@ -388,11 +396,9 @@ async function runSmokeFlow(page) {
   await clickSelector(page, "#layMeldBtn");
   await new Promise((r) => setTimeout(r, 200));
 
-  const alertsAfterMeld = await page.evalJs(`window.__alerts || []`);
-  if (alertsAfterMeld.length > 0) {
-    fail(
-      `laying the meld triggered an error dialog: ${alertsAfterMeld.join("; ")}`,
-    );
+  const dialogAfterMeld = await readErrorDialog(page);
+  if (dialogAfterMeld) {
+    fail(`laying the meld triggered an error dialog: ${dialogAfterMeld}`);
     return;
   }
   const handAfterMeld = await readHand(page);
@@ -421,11 +427,9 @@ async function runSmokeFlow(page) {
   );
   await clickSelector(page, "#discardBtn");
   await new Promise((r) => setTimeout(r, 300));
-  const alertsAfterDiscard = await page.evalJs(`window.__alerts || []`);
-  if (alertsAfterDiscard.length > 0) {
-    fail(
-      `discarding triggered an error dialog: ${alertsAfterDiscard.join("; ")}`,
-    );
+  const dialogAfterDiscard = await readErrorDialog(page);
+  if (dialogAfterDiscard) {
+    fail(`discarding triggered an error dialog: ${dialogAfterDiscard}`);
     return;
   }
   const rowAfter = await page.evalJs(

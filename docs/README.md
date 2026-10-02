@@ -142,7 +142,7 @@ row is voluntary, but nothing stopped a player from taking a card they
 couldn't actually meld and then having no legal move at all. Fixed two ways:
 clicking a row card now warns first if no legal meld for the obligated
 (bottom) card seems possible given your current hand, and if you take it
-anyway (or the check misses something) an "Undo pickup" button reverts the
+anyway (or the check misses something) an "Undo pickup" button (the round arrow icon at the bottom-left of the controls) reverts the
 draw completely — available until you do anything else that turn.
 
 **Joker "duplicate card" display bug (2026-07-26 fix)**: a joker used in a

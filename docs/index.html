@@ -100,9 +100,21 @@
       </div>
       <div id="hand" class="hand"></div>
       <div class="controls">
+        <button
+          id="undoDrawBtn"
+          class="icon-btn"
+          aria-label="Undo pickup"
+          title="Undo pickup"
+        >
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path
+              d="M12 5a7 7 0 1 1-6.6 9.3 1 1 0 1 1 1.9-.6A5 5 0 1 0 8 8.4L9.6 10H4V4.4l2.5 2.5A7 7 0 0 1 12 5z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
         <button id="drawPileBtn">Draw closed pile</button>
         <button id="finishDrawingBtn">Done drawing → Part 2</button>
-        <button id="undoDrawBtn">Undo pickup</button>
         <button id="clearSelectionBtn">Clear selection &amp; target</button>
         <button id="layMeldBtn">Lay new meld from selected</button>
         <button id="addToMeldBtn">Add selected card to targeted meld</button>
@@ -122,6 +134,15 @@
 
     <div id="modalRoot" class="modal-root" hidden>
       <div id="modalBox" class="modal-box"></div>
+    </div>
+
+    <div id="dialogRoot" class="modal-root dialog-root" hidden>
+      <div
+        id="dialogBox"
+        class="modal-box"
+        role="dialog"
+        aria-modal="true"
+      ></div>
     </div>
 
     <script type="module" src="app.js"></script>
