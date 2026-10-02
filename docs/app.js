@@ -25,6 +25,7 @@ let dragState = null;
 let suppressNextClick = false;
 let handDisplayOrder = [];
 let autoScrollHandle = null;
+let lastOpenRowLen = 0;
 let aiDisabled = false; // only ever set via the ?test=1 hook at the bottom
 function $(id) {
     const el = document.getElementById(id);
@@ -37,6 +38,11 @@ function errMsg(e) {
 }
 function fillDialog(box, title, body, actions, close) {
     box.innerHTML = "";
+    const x = document.createElement("button");
+    x.className = "x-btn";
+    x.setAttribute("aria-label", "Close");
+    x.textContent = "×";
+    x.addEventListener("click", close);
     const h = document.createElement("h3");
     h.className = "dialog-title";
     h.textContent = title;
@@ -54,7 +60,7 @@ function fillDialog(box, title, body, actions, close) {
             b.classList.add("secondary");
         row.appendChild(b);
     });
-    box.append(h, p, row);
+    box.append(x, h, p, row);
 }
 function closeDialog() {
     $("dialogRoot").hidden = true;
@@ -221,7 +227,9 @@ function render() {
     }
     fitMeldOverlaps();
     renderHand();
+    renderOppHand();
     renderAiHand();
+    renderMenuLabels();
     renderControls();
     renderLog();
 }
@@ -255,6 +263,19 @@ window.addEventListener("resize", () => {
     if (game)
         fitMeldOverlaps();
 });
+// The opponent's hand as card backs, peeking in from the top edge (Figma).
+function renderOppHand() {
+    const el = $("oppHand");
+    el.innerHTML = "";
+    const g = game;
+    if (!g.round)
+        return;
+    for (let i = 0; i < g.round.hands[1].length; i++) {
+        const back = document.createElement("div");
+        back.className = "card back";
+        el.appendChild(back);
+    }
+}
 // Debug-only: shows the AI's actual hand face-up for testing. The real
 // game would never reveal an opponent's hand -- this exists purely so
 // the designer can see what the AI was holding when reviewing its plays.
@@ -284,18 +305,26 @@ function renderBanner() {
     if (g.gameOver) {
         modalRoot.hidden = false;
         const who = g.winner === 0 ? "You" : "The AI";
-        fillDialog(modalBox, `${who} won the game!`, `Final: P1 ${g.scores[0]} — P2 ${g.scores[1]}.`, [{ label: "Start New Game", onClick: newGame }], () => { });
+        fillDialog(modalBox, `${who} won the game!`, `Final: you ${g.scores[0]} — them ${g.scores[1]}`, [{ label: "New game", onClick: newGame }], () => {
+            modalRoot.hidden = true;
+        });
         banner.hidden = true;
         return;
     }
     if (r.ended) {
         modalRoot.hidden = false;
         const rs = r.roundScores;
-        let msg = r.roundWinner !== null
-            ? `Player ${r.roundWinner + 1} won the round. `
-            : "Closed pile ran out. ";
-        msg += `Round scores — P1 ${rs[0]}, P2 ${rs[1]}.`;
-        fillDialog(modalBox, `Round ${g.roundNumber} over (${r.endReason})`, msg, [{ label: "Next Round", onClick: nextRound }], () => { });
+        const title = r.roundWinner === 0
+            ? `You won round ${g.roundNumber}!`
+            : r.roundWinner === 1
+                ? `The AI won round ${g.roundNumber}`
+                : `Round ${g.roundNumber} over (closed pile ran out)`;
+        fillDialog(modalBox, title, `You scored ${rs[0]}   They scored ${rs[1]}`, [
+            { label: `Round ${g.roundNumber + 1}`, onClick: nextRound },
+            { label: "New game", onClick: newGame, secondary: true },
+        ], () => {
+            modalRoot.hidden = true;
+        });
         banner.hidden = true;
         return;
     }
@@ -344,6 +373,9 @@ function renderOpenRow() {
     const g = game;
     const r = g.round;
     const pickable = r.part === 1 && r.current === 0 && CascadeEngine.canDrawFromRow(g);
+    // Keep the newest discard in view when the row grows past the screen.
+    const grew = r.openRow.length > lastOpenRowLen;
+    lastOpenRowLen = r.openRow.length;
     r.openRow.forEach((card, idx) => {
         el.appendChild(buildCardEl(card, {
             pickable,
@@ -377,6 +409,8 @@ function renderOpenRow() {
                 : null,
         }));
     });
+    if (grew)
+        el.scrollLeft = el.scrollWidth;
 }
 function renderTableau() {
     const el = $("tableau");
@@ -1136,6 +1170,21 @@ function renderControls() {
         rearranging || !(isHumanTurn && r.part === 2 && canDiscardSelected);
     $("startRearrangeBtn").disabled =
         rearranging || !(isHumanTurn && CascadeEngine.canStartRearrange(g));
+    // Contextual action bar: only the actions that currently apply are shown.
+    for (const id of [
+        "finishDrawingBtn",
+        "layMeldBtn",
+        "addToMeldBtn",
+        "swapJokerBtn",
+        "pullMeldBtn",
+        "startRearrangeBtn",
+        "discardBtn",
+        "clearSelectionBtn",
+    ]) {
+        const b = $(id);
+        b.hidden = b.disabled;
+    }
+    updateBalloon(g, r, isHumanTurn, rearranging, hand);
     $("rearrangeControls").hidden = !rearranging;
     if (rearranging) {
         $("rearrangeNewGroupBtn").disabled =
@@ -1328,6 +1377,199 @@ $("cancelRearrangeBtn").addEventListener("click", () => {
         showError(errMsg(e));
     }
 });
+let balloon = null;
+let infoTimer = null;
+const dismissedThisSession = new Set();
+const HINTS_KEY = "cascade.hintsSeen";
+function hintsSeen() {
+    try {
+        return new Set(JSON.parse(localStorage.getItem(HINTS_KEY) ?? "[]"));
+    }
+    catch {
+        return new Set();
+    }
+}
+function rememberHint(key) {
+    try {
+        localStorage.setItem(HINTS_KEY, JSON.stringify([...hintsSeen(), key]));
+    }
+    catch {
+        /* storage unavailable: the tip just shows again next session */
+    }
+}
+function showBalloon(key, text, persist = false) {
+    if (dismissedThisSession.has(key))
+        return;
+    if (persist && hintsSeen().has(key))
+        return;
+    balloon = { key, persist };
+    $("balloonText").textContent = text;
+    $("balloon").hidden = false;
+}
+function hideBalloon() {
+    balloon = null;
+    $("balloon").hidden = true;
+}
+$("balloonClose").addEventListener("click", () => {
+    if (!balloon)
+        return;
+    if (balloon.persist)
+        rememberHint(balloon.key);
+    else
+        dismissedThisSession.add(balloon.key);
+    if (balloon.key === "info" && infoTimer)
+        clearTimeout(infoTimer);
+    hideBalloon();
+});
+function showInfo(text) {
+    if (infoTimer)
+        clearTimeout(infoTimer);
+    dismissedThisSession.delete("info");
+    showBalloon("info", text);
+    infoTimer = setTimeout(() => {
+        if (balloon?.key === "info")
+            hideBalloon();
+        infoTimer = null;
+    }, 3500);
+}
+function updateBalloon(g, r, isHumanTurn, rearranging, hand) {
+    if (balloon?.key === "info")
+        return; // a "why not" note is on screen
+    if (isHumanTurn && !rearranging && r.pendingObligations.length > 0) {
+        const parts = r.pendingObligations.map((id) => {
+            const c = hand.find((h) => h.id === id);
+            const label = c ? cardText(c) : id;
+            return id === r.rowObligationCardId
+                ? `meld ${label} or discard it back`
+                : `meld ${label}`;
+        });
+        showBalloon(`obligation:${r.pendingObligations.join(",")}`, `You must ${parts.join(" and ")}`);
+        return;
+    }
+    if (balloon && !balloon.persist)
+        hideBalloon(); // obligation resolved
+    if (g.gameOver || r.ended || !isHumanTurn || rearranging) {
+        if (balloon?.persist)
+            hideBalloon();
+        return;
+    }
+    if (r.part === 1) {
+        showBalloon("hint-draw", "Tap the pile to draw, or tap a card in the open row to take it and everything on top.", true);
+    }
+    else if (r.part === 2) {
+        showBalloon("hint-play", "Drag cards to the table to meld, or onto the open row to discard.", true);
+    }
+}
+// --- Menu ----------------------------------------------------------------------
+const DEBUG_KEY = "cascade.debug";
+function debugOn() {
+    try {
+        return localStorage.getItem(DEBUG_KEY) === "1";
+    }
+    catch {
+        return false;
+    }
+}
+function setDebug(on) {
+    try {
+        localStorage.setItem(DEBUG_KEY, on ? "1" : "0");
+    }
+    catch {
+        /* storage unavailable: the debug view lasts until reload */
+    }
+    $("debugPanel").hidden = !on;
+    renderMenuLabels();
+}
+function renderMenuLabels() {
+    const g = game;
+    if (!g)
+        return;
+    $("menuRoundBtn").textContent = `Round ${g.roundNumber + 1}`;
+    $("menuGoalBtn").textContent = `Goal ${g.mode === "quick" ? 300 : 1000}`;
+    $("menuDebugBtn").textContent = `Debug: ${debugOn() ? "on" : "off"}`;
+}
+function closeMenu() {
+    $("menuPop").hidden = true;
+    $("menuBtn").setAttribute("aria-expanded", "false");
+}
+$("menuBtn").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const open = $("menuPop").hidden;
+    $("menuPop").hidden = !open;
+    $("menuBtn").setAttribute("aria-expanded", String(open));
+});
+document.addEventListener("click", (ev) => {
+    if (!$("menuPop").hidden && !ev.target.closest("#menuPop"))
+        closeMenu();
+});
+document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape")
+        closeMenu();
+});
+function confirmThen(title, body, label, go) {
+    showDialog(title, body, [
+        { label: "Cancel", secondary: true },
+        { label, onClick: go },
+    ]);
+}
+$("menuNewBtn").addEventListener("click", () => {
+    closeMenu();
+    const g = game;
+    if (g.gameOver || g.round.ended)
+        return newGame();
+    confirmThen("Start a new game?", "The game in progress will be lost.", "New game", newGame);
+});
+$("menuRoundBtn").addEventListener("click", () => {
+    closeMenu();
+    const g = game;
+    if (g.gameOver)
+        return newGame();
+    if (g.round.ended)
+        return nextRound();
+    confirmThen(`Skip to round ${g.roundNumber + 1}?`, "The current round is abandoned without scoring.", `Round ${g.roundNumber + 1}`, nextRound);
+});
+$("menuGoalBtn").addEventListener("click", () => {
+    closeMenu();
+    const pick = (mode) => () => {
+        $("modeSelect").value = mode;
+        newGame();
+    };
+    showDialog("Game goal", "First to pass the goal wins. Changing it starts a new game.", [
+        { label: "300", onClick: pick("quick"), secondary: true },
+        { label: "1000", onClick: pick("standard") },
+    ]);
+});
+$("menuHelpBtn").addEventListener("click", () => {
+    closeMenu();
+    showDialog("How to play", [
+        "Draw from the closed pile (tap it) or take a card from the open row, along with everything on top of it.",
+        "Lay sets or runs of 3+ cards on the table. Your first melds must add up to 40 points to come out.",
+        "End your turn by dragging a card onto the open row. First to empty their hand wins the round.",
+    ].join("\n\n"));
+});
+$("menuDebugBtn").addEventListener("click", () => {
+    closeMenu();
+    setDebug(!debugOn());
+});
+// Tap the closed pile to draw (Figma: no 'draw' button).
+$("pileBtn").addEventListener("click", () => {
+    const draw = $("drawPileBtn");
+    if (!draw.disabled) {
+        draw.click();
+        return;
+    }
+    const g = game;
+    const r = g.round;
+    if (g.gameOver || r.ended)
+        return;
+    if (r.part === "turn0")
+        return showInfo("First take or decline the starter card.");
+    if (r.current !== 0)
+        return showInfo("Wait for the AI's turn.");
+    if (r.rearrange)
+        return showInfo("Finish or cancel the rearrange first.");
+    showInfo("You can't draw from the pile right now.");
+});
 // Browser-test hook (tests/layout_large_hand.js): with ?test=1 the page
 // exposes its game state and render(), and can switch the AI off, so a test
 // can build an extreme position (a 30-card hand, a 13-card run) directly
@@ -1342,4 +1584,5 @@ if (new URLSearchParams(location.search).has("test")) {
         },
     };
 }
+$("debugPanel").hidden = !debugOn();
 newGame();
