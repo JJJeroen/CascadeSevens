@@ -372,7 +372,7 @@ async function runSmokeFlow(page) {
       );
       return;
     }
-    await clickSelector(page, "#drawPileBtn");
+    await clickSelector(page, "#pileBtn");
     await new Promise((r) => setTimeout(r, 200));
     const hand = await readHand(page);
     meldIndices = findSimpleMeldIndices(hand);

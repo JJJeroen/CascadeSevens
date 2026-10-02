@@ -1,6 +1,11 @@
+/* Layout follows Tommer's Figma ("Cascade break" file): a full-screen portrait
+   table on green felt -- menu + round + opponent score on top, the opponent's
+   hand peeking in from the top edge, closed pile + open row, the shared table,
+   then your hand, undo and your score along the bottom. */
 :root {
-  --bg: #16543f;
-  --bg-panel: #1b6249;
+  --felt-1: #0c6e2b;
+  --felt-2: #065022;
+  --felt-3: #032d11;
   --card-bg: #fdfdfb;
   --card-border: #1a1a1a;
   --red: #c0392b;
@@ -8,8 +13,12 @@
   --green: #1f7a3d;
   --blue: #1f5fa8;
   --accent: #e8c14c;
+  --brand: #1f08f0;
+  --balloon: #5345d0;
   --text: #f7f5ed;
   --muted: #d3e3d9;
+  --back-a: #5b4fe0;
+  --back-b: #8f86f5;
 }
 
 * {
@@ -30,46 +39,42 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--bg);
+  min-height: 100dvh;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   color: var(--text);
-  padding-bottom: 2rem;
+  background: var(--felt-3);
+  background: radial-gradient(
+      ellipse at 50% 38%,
+      var(--felt-1) 0%,
+      var(--felt-2) 55%,
+      var(--felt-3) 100%
+    )
+    fixed;
 }
 
-.topbar {
+#app {
+  min-height: 100dvh;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1.25rem;
-  background: var(--bg-panel);
-  border-bottom: 2px solid var(--accent);
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.5rem;
-}
-
-.topbar h1 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-.subtitle {
-  font-size: 0.7rem;
-  color: var(--muted);
-  font-weight: normal;
-  display: block;
-}
-
-.topbar-controls {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
+  padding: max(env(safe-area-inset-top), 4px) 8px
+    max(env(safe-area-inset-bottom), 8px);
 }
 
 button {
-  background: var(--accent);
-  color: #1a1a1a;
+  background: var(--brand);
+  color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 0.45rem 0.9rem;
+  font: inherit;
+  font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
 }
@@ -78,63 +83,219 @@ button:disabled {
   cursor: not-allowed;
 }
 button:hover:not(:disabled) {
-  filter: brightness(1.08);
+  filter: brightness(1.12);
+}
+button.secondary {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
 }
 
-select {
+select,
+input {
   padding: 0.3rem;
   border-radius: 4px;
   border: none;
 }
 
-.scoreboard {
+/* --- Header: menu, round, opponent score ------------------------------- */
+.gbar {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 0.3rem 1rem;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.95rem;
-  color: var(--muted);
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
 }
-.score-box {
+.menu-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text);
+}
+.round-label {
+  font-size: 0.8rem;
   font-weight: 600;
 }
-.score-box span {
+.score {
+  margin-left: auto;
   color: var(--accent);
-  font-size: 1.1rem;
-  margin-left: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
-
-.banner {
-  margin: 0.5rem 1.25rem;
-  padding: 0.75rem 1rem;
-  background: #3a2f10;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
+.menu-pop {
+  position: absolute;
+  top: 44px;
+  left: 6px;
+  z-index: 15;
   display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  flex-wrap: wrap;
+  flex-direction: column;
+  min-width: 96px;
+  background: #fff;
+  border: 1px solid #000;
+}
+.menu-pop button {
+  background: transparent;
+  color: #000;
+  border-radius: 0;
+  text-align: left;
+  padding: 0.4rem 0.7rem;
+  font-weight: 500;
+}
+.menu-pop button:hover {
+  background: #e9e9ff;
+  filter: none;
 }
 
-.table,
-.hand-area,
-.log-panel,
-.ai-hand-area {
-  margin: 1rem 1.25rem;
-  background: var(--bg-panel);
-  border-radius: 10px;
-  padding: 0.75rem 1rem 1.25rem;
+/* --- Opponent: card backs peeking in from the top edge ----------------- */
+.opp-hand {
+  display: flex;
+  height: 30px;
+  overflow: hidden;
+  padding-left: 22px; /* cancels the first card's negative margin */
+  margin-top: -6px;
+}
+.opp-hand .card.back {
+  width: 40px;
+  height: 58px;
+  margin-top: -28px;
+  margin-left: -22px;
 }
 
-/* Debug-only AI hand: dashed border + no pointer cursor on cards (there's
-   nothing to click here) to visually mark it as a testing aid, distinct
-   from the real, interactive controls around it. */
-.ai-hand-area {
-  border: 1px dashed var(--accent);
+/* --- Closed pile + open row ------------------------------------------- */
+.deck-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
 }
-.ai-hand-area .hand .card {
+.pile {
+  position: relative;
+  flex-shrink: 0;
+  width: 52px;
+  height: 74px;
+  padding: 0;
+  margin: 0 6px 6px 0;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--back-a) 0 3px,
+    var(--back-b) 3px 6px
+  );
+  border: 3px solid #fff;
+  border-radius: 6px;
+  box-shadow:
+    2px 2px 0 #fff,
+    3px 3px 0 var(--back-a),
+    5px 5px 0 #fff,
+    6px 6px 0 var(--back-a);
+}
+.pile:disabled {
+  opacity: 1; /* it's a table object, not a greyed-out control */
   cursor: default;
+}
+.pile-count {
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  transform: translateX(-50%);
+  min-width: 22px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.65rem;
+  line-height: 14px;
+}
+
+/* --- Shared table ------------------------------------------------------ */
+.tableau {
+  flex: 1 1 120px;
+  min-height: 120px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.5rem;
+  /* Its own bounded, scrollable region (added #40) -- without this the
+     tableau just grows the whole page taller as melds accumulate, forcing
+     constant scrolling past it to reach the hand/controls below. Also gives
+     drag-to-add a concrete scrollable target to autoscroll when a drop
+     target has scrolled out of view mid-drag. */
+  overflow-y: auto;
+}
+
+.rearrange-pool {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 0.25rem 0.6rem 0.5rem;
+}
+
+.status-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.75rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* --- Bottom bar: undo, contextual actions, your score ------------------ */
+.bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.action-bar {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* --- Debug panel (menu -> Debug) --------------------------------------- */
+.debug-panel {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem 0.9rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+}
+.debug-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+.debug-panel .hand .card {
+  cursor: default;
+}
+
+/* --- Hint balloon (one at a time, dismissible) ------------------------- */
+.balloon {
+  position: relative;
+  align-self: flex-end;
+  max-width: 200px;
+  padding: 14px 30px 14px 14px;
+  background: var(--balloon);
+  color: #fff;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.3;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.x-btn {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
 }
 
 h2 {
@@ -149,23 +310,12 @@ h2 {
 
 .open-row {
   display: flex;
-  min-height: 90px;
-  padding: 0.5rem 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 80px;
+  padding: 0.25rem 0;
   overflow-x: auto;
   touch-action: pan-x;
-}
-
-.tableau {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  /* Its own bounded, scrollable region (added #40) -- without this the
-     tableau just grows the whole page taller as melds accumulate, forcing
-     constant scrolling past it to reach the hand/controls below. Also gives
-     drag-to-add a concrete scrollable target to autoscroll when a drop
-     target has scrolled out of view mid-drag. */
-  max-height: 42vh;
-  overflow-y: auto;
 }
 
 .meld {
@@ -312,16 +462,6 @@ h2 {
   position: relative;
 }
 
-.hand-area {
-}
-.hand-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
 .obligation {
   color: #ffb74d;
   font-size: 0.85rem;
@@ -428,7 +568,7 @@ h2 {
   align-items: center;
 }
 
-.log-panel #log {
+#log {
   max-height: 160px;
   overflow-y: auto;
   font-size: 0.8rem;
@@ -436,7 +576,7 @@ h2 {
   display: flex;
   flex-direction: column-reverse;
 }
-.log-panel #log div {
+#log div {
   padding: 0.15rem 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -454,10 +594,12 @@ h2 {
   z-index: 20;
 }
 .modal-box {
-  background: var(--bg-panel);
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  padding: 1.5rem;
+  position: relative;
+  background: #fff;
+  color: #000;
+  border: 2px solid var(--brand);
+  border-radius: 5px;
+  padding: 1.25rem 1.5rem 1.1rem;
   max-width: 480px;
   width: 90%;
   display: flex;
@@ -475,12 +617,15 @@ h2 {
    title / body / button-row layout. */
 .modal-box .dialog-title {
   margin: 0;
-  font-size: 1.15rem;
-  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #000;
 }
 .modal-box .dialog-body {
   margin: 0;
-  white-space: pre-line; /* multi-line messages (rearrange-commit problems) */
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: pre-wrap; /* keeps newlines (rearrange-commit problems) and spacing */
   line-height: 1.4;
 }
 .modal-box .modal-actions {
@@ -490,40 +635,40 @@ h2 {
   flex-wrap: wrap;
   margin-top: 0.5rem;
 }
-button.secondary {
-  background: transparent;
-  color: var(--text);
-  border: 1px solid var(--muted);
+.modal-box button.secondary {
+  background: #fff;
+  color: var(--brand);
+  border: 1px solid var(--brand);
+}
+.modal-box .x-btn {
+  top: 2px;
+  right: 4px;
+  color: #000;
 }
 
-@media (max-width: 480px) {
-  .table,
-  .hand-area,
-  .log-panel {
-    margin: 0.6rem 0.6rem;
-    padding: 0.6rem 0.6rem 1rem;
-  }
-  .topbar {
-    padding: 0.6rem 0.75rem;
-  }
-  .scoreboard {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-  }
-  .banner {
-    margin: 0.5rem 0.6rem;
-  }
-  .controls {
-    gap: 0.4rem;
-  }
-  .controls button {
-    flex: 1 1 auto;
-    font-size: 0.85rem;
-  }
-  .controls .icon-btn {
-    flex: 0 0 44px;
-  }
+/* Card back (opponent's hand). */
+.card.back {
+  padding: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--back-a) 0 3px,
+    var(--back-b) 3px 6px
+  );
+  border: 3px solid #fff;
+}
+
+/* Turn-0 prompt: same look as the dialogs, but inline so your hand stays
+   visible while you answer. */
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.8rem;
+  background: #fff;
+  color: #000;
+  border: 2px solid var(--brand);
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
 }

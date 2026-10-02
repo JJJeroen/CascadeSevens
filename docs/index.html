@@ -2,104 +2,89 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cascade Sevens — Rules Mock</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Cascade Break</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header class="topbar">
-      <h1>
-        Cascade Sevens <span class="subtitle">rules/functionality mock</span>
-      </h1>
-      <div class="topbar-controls">
-        <label
-          >Mode:
-          <select id="modeSelect">
-            <option value="standard">Standard (&gt;1000)</option>
-            <option value="quick">Quick (&gt;300)</option>
-          </select>
-        </label>
-        <label
-          >Seed:
-          <input
-            id="seedInput"
-            type="text"
-            size="8"
-            placeholder="random"
-            title="Leave blank for a random deal, or enter a previously-shown seed to replay that exact deal (shuffle, starter card, and starter coin-flip)."
-        /></label>
-        <button id="newGameBtn">New Game</button>
-      </div>
-    </header>
-
-    <div class="scoreboard">
-      <div class="score-box you">You (P1) <span id="scoreP1">0</span></div>
-      <div class="round-info">
-        Round <span id="roundNum">0</span> · Pile:
-        <span id="pileCount">0</span> · Seed: <span id="currentSeed">–</span>
-      </div>
-      <div class="score-box ai">AI (P2) <span id="scoreP2">0</span></div>
-    </div>
-
-    <main id="banner" class="banner" hidden></main>
-
-    <section class="ai-hand-area">
-      <h2>
-        AI hand
-        <span class="hint"
-          >(debug view for testing — not part of the real game, the AI's cards
-          would normally be hidden)</span
+    <div id="app">
+      <header class="gbar">
+        <button
+          id="menuBtn"
+          class="menu-btn"
+          aria-label="Menu"
+          aria-haspopup="true"
+          aria-expanded="false"
         >
-      </h2>
-      <div id="aiHand" class="hand"></div>
-    </section>
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+            <path
+              d="M3 6h18M3 12h18M3 18h18"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              fill="none"
+            />
+          </svg>
+        </button>
+        <span class="round-label">Round <span id="roundNum">0</span></span>
+        <span id="scoreP2" class="score" title="Opponent's score">0</span>
+        <nav id="menuPop" class="menu-pop" hidden>
+          <button id="menuNewBtn">New</button>
+          <button id="menuRoundBtn">Round 2</button>
+          <button id="menuGoalBtn">Goal 1000</button>
+          <button id="menuHelpBtn">Help</button>
+          <button id="menuDebugBtn">Debug</button>
+        </nav>
+      </header>
 
-    <section class="table">
-      <h2>
-        Open Row
-        <span class="hint"
-          >(click a card to scoop it + everything on top — the bottom one must
-          be melded this turn; repeatable in Part 1, but locks out the closed
-          pile for this turn)</span
-        >
-      </h2>
-      <div id="openRow" class="open-row"></div>
+      <div id="oppHand" class="opp-hand" aria-label="Opponent's hand"></div>
 
-      <h2>
-        Tableau
-        <span id="tableauHint" class="hint"
-          >(shared — click a meld's border to target it for
-          Add/Swap/Pull-entire; click a card inside it to pull just that card,
-          once you've come out)</span
-        >
-      </h2>
-      <div id="tableau" class="tableau"></div>
-      <div id="rearrangeHandPoolWrap" hidden>
+      <main id="banner" class="banner" hidden></main>
+
+      <section class="deck-row">
+        <button id="pileBtn" class="pile" aria-label="Closed pile: tap to draw">
+          <span id="pileCount" class="pile-count">0</span>
+        </button>
+        <div id="openRow" class="open-row" aria-label="Open row"></div>
+      </section>
+
+      <section id="tableau" class="tableau" aria-label="Table"></section>
+
+      <section id="rearrangeHandPoolWrap" class="rearrange-pool" hidden>
         <h2>
           Your hand, in the draft
           <span class="hint"
-            >(click a card, then click a group below to move it there)</span
+            >(tap a card, then tap a group to move it there)</span
           >
         </h2>
         <div id="rearrangeHandPool" class="open-row"></div>
-      </div>
+      </section>
       <div id="rearrangeControls" class="controls" hidden>
         <button id="rearrangeNewGroupBtn">Move selected to a new group</button>
         <button id="rearrangeToHandBtn">Move selected to hand</button>
         <button id="commitRearrangeBtn">Commit rearrange</button>
         <button id="cancelRearrangeBtn">Cancel rearrange</button>
       </div>
-    </section>
+      <span id="tableauHint" hidden></span>
 
-    <section class="hand-area">
-      <div class="hand-header">
+      <div id="balloon" class="balloon" hidden>
+        <span id="balloonText"></span>
+        <button id="balloonClose" class="x-btn" aria-label="Dismiss">×</button>
+      </div>
+
+      <div class="status-line">
         <span id="turnLabel">—</span>
         <span id="obligationLabel" class="obligation" hidden></span>
         <span id="selectionCount" class="selection-count" hidden></span>
         <span id="targetIndicator" class="selection-count" hidden></span>
       </div>
+
       <div id="hand" class="hand"></div>
-      <div class="controls">
+
+      <footer class="bottom-bar">
         <button
           id="undoDrawBtn"
           class="icon-btn"
@@ -113,24 +98,51 @@
             />
           </svg>
         </button>
-        <button id="drawPileBtn">Draw closed pile</button>
-        <button id="finishDrawingBtn">Done drawing → Part 2</button>
-        <button id="clearSelectionBtn">Clear selection &amp; target</button>
-        <button id="layMeldBtn">Lay new meld from selected</button>
-        <button id="addToMeldBtn">Add selected card to targeted meld</button>
-        <button id="swapJokerBtn">Swap targeted joker for selected card</button>
-        <button id="pullMeldBtn">
-          Pull my cards from targeted meld back to hand
-        </button>
-        <button id="startRearrangeBtn">Rearrange tableau…</button>
-        <button id="discardBtn">Discard selected</button>
-      </div>
-    </section>
+        <div id="actionBar" class="action-bar">
+          <!-- Buttons appear only while they apply (see renderControls).
+               Drawing from the closed pile is done by tapping the pile, so
+               drawPileBtn stays hidden and is only clicked programmatically. -->
+          <button id="drawPileBtn" hidden>Draw closed pile</button>
+          <button id="finishDrawingBtn">Done drawing</button>
+          <button id="layMeldBtn">Lay meld</button>
+          <button id="addToMeldBtn">Add to meld</button>
+          <button id="swapJokerBtn">Swap joker</button>
+          <button id="pullMeldBtn">Pull my cards</button>
+          <button id="startRearrangeBtn">Rearrange…</button>
+          <button id="discardBtn">Discard</button>
+          <button id="clearSelectionBtn" class="secondary">Clear</button>
+        </div>
+        <span id="scoreP1" class="score" title="Your score">0</span>
+      </footer>
 
-    <section class="log-panel">
-      <h2>Log</h2>
-      <div id="log"></div>
-    </section>
+      <section id="debugPanel" class="debug-panel" hidden>
+        <h2>Debug (menu → Debug to hide)</h2>
+        <div class="debug-controls">
+          <label
+            >Mode:
+            <select id="modeSelect">
+              <option value="standard">Standard (&gt;1000)</option>
+              <option value="quick">Quick (&gt;300)</option>
+            </select>
+          </label>
+          <label
+            >Seed:
+            <input
+              id="seedInput"
+              type="text"
+              size="8"
+              placeholder="random"
+              title="Leave blank for a random deal, or enter a previously-shown seed to replay that exact deal (shuffle, starter card, and starter coin-flip)."
+          /></label>
+          <button id="newGameBtn">New Game</button>
+          <span>Seed: <span id="currentSeed">–</span></span>
+        </div>
+        <h2>AI hand (face up for testing)</h2>
+        <div id="aiHand" class="hand"></div>
+        <h2>Log</h2>
+        <div id="log"></div>
+      </section>
+    </div>
 
     <div id="modalRoot" class="modal-root" hidden>
       <div id="modalBox" class="modal-box"></div>
