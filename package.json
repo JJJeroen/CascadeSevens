@@ -14,7 +14,7 @@
     "build": "tsc",
     "pretest": "npm run build",
     "test": "node tests/run-all.js",
-    "test:browser": "node tests/smoke_browser.js",
+    "test:browser": "node tests/smoke_browser.js && node tests/ai_stale_timer.js",
     "test:layout": "node tests/layout_large_hand.js",
     "lint": "eslint . && prettier --check \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\"",
     "lint:fix": "eslint . --fix && prettier --write \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\"",
