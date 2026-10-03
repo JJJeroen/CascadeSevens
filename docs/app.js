@@ -36,6 +36,56 @@ function $(id) {
 function errMsg(e) {
     return e instanceof Error ? e.message : String(e);
 }
+// One dialog look for everything that interrupts the player (errors,
+// confirmations, round/game end): title, body text, a row of buttons. Replaces
+// the browser's native alert()/confirm(), which look different on every
+// platform (and in the Capacitor WebView) and block the page.
+// Popups can be dragged out of the way (by their top handle or any empty part
+// of the box): the round-end popup used to sit on top of the very table the
+// player wanted to look at to see what had just happened.
+const dialogOffsets = new WeakMap();
+function resetDialogPosition(box) {
+    dialogOffsets.set(box, { x: 0, y: 0 });
+    box.style.transform = "";
+}
+function makeDraggable(box) {
+    resetDialogPosition(box);
+    let drag = null;
+    box.addEventListener("pointerdown", (ev) => {
+        if (!ev.isPrimary || ev.target.closest("button"))
+            return;
+        const off = dialogOffsets.get(box);
+        const r = box.getBoundingClientRect();
+        // Where the box sits with no offset, so the move can be kept on screen.
+        const baseLeft = r.left - off.x;
+        const baseTop = r.top - off.y;
+        drag = {
+            id: ev.pointerId,
+            startX: ev.clientX,
+            startY: ev.clientY,
+            from: { ...off },
+            minX: -baseLeft,
+            maxX: window.innerWidth - baseLeft - r.width,
+            minY: -baseTop,
+            maxY: window.innerHeight - baseTop - r.height,
+        };
+        box.setPointerCapture(ev.pointerId);
+    });
+    box.addEventListener("pointermove", (ev) => {
+        if (!drag || ev.pointerId !== drag.id)
+            return;
+        const x = Math.min(drag.maxX, Math.max(drag.minX, drag.from.x + ev.clientX - drag.startX));
+        const y = Math.min(drag.maxY, Math.max(drag.minY, drag.from.y + ev.clientY - drag.startY));
+        dialogOffsets.set(box, { x, y });
+        box.style.transform = `translate(${x}px, ${y}px)`;
+    });
+    const end = (ev) => {
+        if (drag && ev.pointerId === drag.id)
+            drag = null;
+    };
+    box.addEventListener("pointerup", end);
+    box.addEventListener("pointercancel", end);
+}
 function fillDialog(box, title, body, actions, close) {
     box.innerHTML = "";
     const x = document.createElement("button");
@@ -71,6 +121,7 @@ function closeDialog() {
 // wiped by the very next render.
 function showDialog(title, body, actions = [{ label: "OK" }]) {
     fillDialog($("dialogBox"), title, body, actions, closeDialog);
+    resetDialogPosition($("dialogBox"));
     $("dialogRoot").hidden = false;
     $("dialogBox").querySelector("button")?.focus();
 }
@@ -164,6 +215,7 @@ function newGame() {
     turn0UiMode = "idle";
     handDisplayOrder = [];
     hideBalloon(); // don't carry a leftover note into the new game
+    resetDialogPosition($("modalBox"));
     render();
     scheduleIfAITurn();
 }
@@ -174,6 +226,7 @@ function nextRound() {
     turn0UiMode = "idle";
     handDisplayOrder = [];
     hideBalloon();
+    resetDialogPosition($("modalBox"));
     render();
     scheduleIfAITurn();
 }
@@ -1709,5 +1762,7 @@ else if (splash) {
     setTimeout(() => splash.remove(), 2500);
 }
 void showVersion();
+makeDraggable($("modalBox"));
+makeDraggable($("dialogBox"));
 $("debugPanel").hidden = !debugOn();
 newGame();

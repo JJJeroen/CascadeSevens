@@ -734,3 +734,34 @@ h2 {
   color: #666;
   font-size: 0.65rem;
 }
+
+/* --- Movable popups ---------------------------------------------------- */
+/* Drag a popup by its top handle (or any empty part of it); app.ts moves it
+   with a transform and keeps it on screen. */
+.modal-box {
+  cursor: grab;
+  touch-action: none;
+}
+.modal-box button {
+  cursor: pointer;
+}
+.modal-box::before {
+  content: "";
+  align-self: center;
+  width: 40px;
+  height: 4px;
+  margin: -0.6rem 0 0.2rem;
+  border-radius: 2px;
+  background: #c5c5f5;
+}
+/* The round/game-end popup (not the confirmations) must not hide the table it
+   reports on: no dimming, and taps/scrolls fall through to the page; only the
+   popup box itself takes input. */
+#modalRoot {
+  background: transparent;
+  pointer-events: none;
+}
+#modalRoot .modal-box {
+  pointer-events: auto;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
