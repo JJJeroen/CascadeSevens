@@ -230,6 +230,7 @@ function render() {
     renderOppHand();
     renderAiHand();
     renderMenuLabels();
+    renderOppStatus();
     renderControls();
     renderLog();
 }
@@ -619,6 +620,16 @@ function renderHand() {
                     }
                     return;
                 }
+                if (r.part === 1 &&
+                    r.current === 0 &&
+                    CascadeEngine.canFinishDrawing(g)) {
+                    // Picked up from the open row but still in the draw step: the
+                    // melding controls only unlock after "Done drawing". Say so,
+                    // instead of silently ignoring the tap (it looked like the game
+                    // wouldn't let a meld be laid).
+                    showInfo('Tap "Done drawing" first, then lay your meld.');
+                    return;
+                }
                 if (r.part !== 2 || r.current !== 0)
                     return;
                 if (selectedHandCardIds.has(card.id))
@@ -894,7 +905,9 @@ function resolveDrop(ds) {
     }
     if (!ds.canPlay) {
         if (target)
-            showError("You can only play a card during Part 2 of your own turn.");
+            showError(r.part === 1 && r.current === 0 && CascadeEngine.canFinishDrawing(g)
+                ? 'Tap "Done drawing" first, then you can play cards.'
+                : "You can only play a card during Part 2 of your own turn.");
         return; // no target and can't play -> just snap back, no message needed
     }
     // Dragging one card out of an active multi-card selection: where it
@@ -1453,6 +1466,10 @@ function updateBalloon(g, r, isHumanTurn, rearranging, hand) {
             hideBalloon();
         return;
     }
+    if (CascadeEngine.canFinishDrawing(g)) {
+        showBalloon("finish", 'Done drawing? Tap "Done drawing" to start melding.');
+        return;
+    }
     if (r.part === 1) {
         showBalloon("hint-draw", "Tap the pile to draw, or tap a card in the open row to take it and everything on top.", true);
     }
@@ -1479,6 +1496,29 @@ function setDebug(on) {
     }
     $("debugPanel").hidden = !on;
     renderMenuLabels();
+}
+// The opponent's progress toward coming out (40 points of new melds, carried
+// across turns). Without it, a laid meld below 40 -- e.g. A-2-3 = 35 -- looks
+// like the AI is already "out" when it isn't.
+function renderOppStatus() {
+    const g = game;
+    const r = g.round;
+    const el = $("oppStatus");
+    if (!r || r.ended) {
+        el.hidden = true;
+        return;
+    }
+    if (r.comeOut[1]) {
+        el.textContent = "out";
+        el.hidden = false;
+    }
+    else if (r.comeOutAccum[1] > 0) {
+        el.textContent = `${r.comeOutAccum[1]}/40`;
+        el.hidden = false;
+    }
+    else {
+        el.hidden = true;
+    }
 }
 function renderMenuLabels() {
     const g = game;

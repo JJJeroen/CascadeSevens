@@ -311,6 +311,7 @@ function render(): void {
   renderOppHand();
   renderAiHand();
   renderMenuLabels();
+  renderOppStatus();
   renderControls();
   renderLog();
 }
@@ -752,6 +753,18 @@ function renderHand(): void {
           }
           return;
         }
+        if (
+          r.part === 1 &&
+          r.current === 0 &&
+          CascadeEngine.canFinishDrawing(g)
+        ) {
+          // Picked up from the open row but still in the draw step: the
+          // melding controls only unlock after "Done drawing". Say so,
+          // instead of silently ignoring the tap (it looked like the game
+          // wouldn't let a meld be laid).
+          showInfo('Tap "Done drawing" first, then lay your meld.');
+          return;
+        }
         if (r.part !== 2 || r.current !== 0) return;
         if (selectedHandCardIds.has(card.id))
           selectedHandCardIds.delete(card.id);
@@ -1037,7 +1050,11 @@ function resolveDrop(ds: DragState): void {
   }
   if (!ds.canPlay) {
     if (target)
-      showError("You can only play a card during Part 2 of your own turn.");
+      showError(
+        r.part === 1 && r.current === 0 && CascadeEngine.canFinishDrawing(g)
+          ? 'Tap "Done drawing" first, then you can play cards.'
+          : "You can only play a card during Part 2 of your own turn.",
+      );
     return; // no target and can't play -> just snap back, no message needed
   }
 
@@ -1642,6 +1659,10 @@ function updateBalloon(
     if (balloon?.persist) hideBalloon();
     return;
   }
+  if (CascadeEngine.canFinishDrawing(g)) {
+    showBalloon("finish", 'Done drawing? Tap "Done drawing" to start melding.');
+    return;
+  }
   if (r.part === 1) {
     showBalloon(
       "hint-draw",
@@ -1675,6 +1696,28 @@ function setDebug(on: boolean): void {
   }
   $("debugPanel").hidden = !on;
   renderMenuLabels();
+}
+
+// The opponent's progress toward coming out (40 points of new melds, carried
+// across turns). Without it, a laid meld below 40 -- e.g. A-2-3 = 35 -- looks
+// like the AI is already "out" when it isn't.
+function renderOppStatus(): void {
+  const g = game as Game;
+  const r = g.round;
+  const el = $("oppStatus");
+  if (!r || r.ended) {
+    el.hidden = true;
+    return;
+  }
+  if (r.comeOut[1]) {
+    el.textContent = "out";
+    el.hidden = false;
+  } else if (r.comeOutAccum[1] > 0) {
+    el.textContent = `${r.comeOutAccum[1]}/40`;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+  }
 }
 
 function renderMenuLabels(): void {

@@ -672,3 +672,27 @@ h2 {
   font-size: 0.8rem;
   font-weight: 600;
 }
+
+/* Opponent's come-out progress ("35/40" or "out") beside the round label. */
+.opp-status {
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--muted);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+.opp-status + .score {
+  margin-left: 0;
+}
+
+/* The one action that's easy to miss and blocks everything else: after taking
+   from the open row you must press it before you can meld. */
+.action-bar .cta {
+  flex: 1 1 100%;
+  background: var(--accent);
+  color: #1a1a1a;
+  font-size: 0.95rem;
+  padding: 0.65rem 1rem;
+}
