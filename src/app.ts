@@ -670,6 +670,15 @@ function renderTableau(): void {
           meldId: meld.id,
           ownsCard: true,
         });
+      } else if (r.part === 2 && r.current === 0 && !r.ended) {
+        // Not pullable right now -- say why, instead of a drag that silently
+        // does nothing (it read as "the game is broken").
+        attachBlockedPullHint(
+          cardEl,
+          !r.comeOut[0]
+            ? "You can only pull cards back after you've come out (40 points or more in one turn)."
+            : `${cardText(slot.card)} counts for the AI, so you can't pull it back; you can only pull back cards you laid yourself. To regroup it anyway, use "Rearrange…".`,
+        );
       }
       cardsWrap.appendChild(cardEl);
     });
@@ -854,6 +863,41 @@ function reorderHandCard(cardId: string, beforeCardId: string | null): void {
 }
 
 // --- Drag-and-drop mechanics (#40) ------------------------------------------
+
+// A card that can't be pulled back (the AI's, or you haven't come out yet).
+// Holding it, or dragging it with a mouse, shows why. A quick swipe on touch
+// is just scrolling the table, so that stays silent.
+function attachBlockedPullHint(el: HTMLElement, message: string): void {
+  el.addEventListener("pointerdown", (ev: PointerEvent) => {
+    if (!ev.isPrimary) return;
+    const startX = ev.clientX;
+    const startY = ev.clientY;
+    const isTouch = ev.pointerType === "touch";
+    let shown = false;
+    const show = (): void => {
+      if (shown) return;
+      shown = true;
+      showInfo(message, 6000);
+      stop();
+    };
+    const holdTimer = setTimeout(show, HOLD_MS);
+    const onMove = (m: PointerEvent): void => {
+      if (Math.hypot(m.clientX - startX, m.clientY - startY) <= 10) return;
+      if (isTouch)
+        stop(); // swiping to scroll, not trying to pick the card up
+      else show();
+    };
+    const stop = (): void => {
+      clearTimeout(holdTimer);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", stop);
+      document.removeEventListener("pointercancel", stop);
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", stop);
+    document.addEventListener("pointercancel", stop);
+  });
+}
 
 function attachDragSource(el: HTMLElement, source: DragSource): void {
   el.addEventListener("pointerdown", (ev: PointerEvent) => {
@@ -1719,14 +1763,14 @@ $("balloonClose").addEventListener("click", () => {
   hideBalloon();
 });
 
-function showInfo(text: string): void {
+function showInfo(text: string, ms = 3500): void {
   if (infoTimer) clearTimeout(infoTimer);
   dismissedThisSession.delete("info");
   showBalloon("info", text);
   infoTimer = setTimeout(() => {
     if (balloon?.key === "info") hideBalloon();
     infoTimer = null;
-  }, 3500);
+  }, ms);
 }
 
 function updateBalloon(
@@ -1917,6 +1961,7 @@ $("menuHelpBtn").addEventListener("click", () => {
       "Each turn: draw, lay series on the table, then discard.",
       "Draw: tap the pile for its top card, or tap a card in the cascade to take it and every card on top of it. Then tap Done drawing.",
       "Lay: put 3 or more cards on the table as a series (the same number in different suits, or a run in one suit). To come out, the series you lay in one turn must be worth 40 points or more (ace 25, 10-K 10, 2-9 5, joker 50). If they are worth less, you can lay more or take them back.",
+      "Moving cards: drag back a series card you laid yourself (an end card of a run, or any card that leaves a valid series). To regroup any card on the table, even the AI's, use Rearrange… as long as every series is valid when you commit.",
       "Discard: drag a card onto the cascade to end your turn. Whoever empties their hand first ends the round. The first player past the goal (menu) wins the game.",
     ].join("\n\n"),
   );

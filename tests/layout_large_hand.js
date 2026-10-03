@@ -624,6 +624,92 @@ async function testMovablePopup(page, vp) {
     );
 }
 
+// A card you can't pull back (the AI's, or you haven't come out yet) must say
+// why when you hold or drag it, instead of silently not moving.
+async function testBlockedPullHint(page, vp) {
+  const tag = `${vp.name} blocked-pull`;
+  const q = (js) => page.evalJs(js);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  await q(`document.querySelector("#newGameBtn").click()`);
+  const setup = (comeOut) =>
+    q(`(() => {
+    const g = window.__cascadeTest.getGame(), r = g.round;
+    r.part = 2; r.current = 0; r.ended = false; r.comeOut[0] = ${comeOut}; r.comeOutAccum = [0, 0];
+    r.pendingObligations = []; r.rowObligationCardId = null; r.rearrange = null; r.comeOutAttempt = null;
+    const c = (rank, suit) => ({ id: rank + suit, rank, suit });
+    r.hands[0] = [c("K","D"), c("2","C"), c("9","S")];
+    r.tableau = [{ id: "ai", type: "set", slots: ["S","H","D"].map((s) => ({ card: c("Q", s), ownerId: 1, wildAs: null })) }];
+    document.querySelector("#balloonClose")?.click();
+    window.__cascadeTest.render();
+  })()`);
+  const balloon = () =>
+    q(
+      `(() => { const b = document.querySelector("#balloon"); return b.hidden ? null : b.textContent.trim(); })()`,
+    );
+  const send = (type, x, y) =>
+    page.send("Input.dispatchMouseEvent", {
+      type,
+      x,
+      y,
+      button: "left",
+      buttons: type === "mouseReleased" ? 0 : 1,
+      clickCount: 1,
+    });
+  const cardPoint = () =>
+    q(
+      `(() => { const r = document.querySelector('#tableau .card[data-card-id="QD"]').getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`,
+    );
+
+  await setup(true);
+  // mouse drag, no hold
+  let p = await cardPoint();
+  await send("mouseMoved", p.x, p.y);
+  await send("mousePressed", p.x, p.y);
+  await send("mouseMoved", p.x + 30, p.y + 60);
+  await send("mouseReleased", p.x + 30, p.y + 60);
+  let b = await balloon();
+  if (!b || !/counts for the AI/.test(b) || !/Rearrange/.test(b))
+    fail(
+      `${tag}: dragging the AI's card should explain why, got ${JSON.stringify(b)}`,
+    );
+
+  // press and hold, no movement
+  await setup(true);
+  p = await cardPoint();
+  await send("mouseMoved", p.x, p.y);
+  await send("mousePressed", p.x, p.y);
+  await sleep(400);
+  await send("mouseReleased", p.x, p.y);
+  b = await balloon();
+  if (!b || !/counts for the AI/.test(b))
+    fail(
+      `${tag}: holding the AI's card should explain why, got ${JSON.stringify(b)}`,
+    );
+
+  // not come out yet
+  await setup(false);
+  p = await cardPoint();
+  await send("mouseMoved", p.x, p.y);
+  await send("mousePressed", p.x, p.y);
+  await sleep(400);
+  await send("mouseReleased", p.x, p.y);
+  b = await balloon();
+  if (!b || !/after you've come out/.test(b))
+    fail(
+      `${tag}: before coming out it should say so, got ${JSON.stringify(b)}`,
+    );
+
+  // a plain tap still just targets the series, with no hint
+  await setup(true);
+  p = await cardPoint();
+  await send("mouseMoved", p.x, p.y);
+  await send("mousePressed", p.x, p.y);
+  await send("mouseReleased", p.x, p.y);
+  b = await balloon();
+  if (b && /counts for the AI/.test(b))
+    fail(`${tag}: a plain tap should not show the hint`);
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -646,6 +732,7 @@ async function main() {
       await testLog(page, vp);
       await testSub40Popup(page, vp);
       await testTurn0(page, vp);
+      await testBlockedPullHint(page, vp);
       await testRoundEnd(page, vp); // leaves the round marked ended...
       await testMovablePopup(page, vp); // ...which this one needs
     }
