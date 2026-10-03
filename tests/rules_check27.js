@@ -23,7 +23,7 @@ for (const file of files) {
     readFileSync(path.join(root, file), "utf8"),
     file,
   );
-  text.split("\n").forEach((line, i) => {
+  text.split("\n").forEach((line) => {
     if (OLD.test(line)) {
       bad++;
       console.log(`FAIL: ${file}: ${line.trim().slice(0, 140)}`);
