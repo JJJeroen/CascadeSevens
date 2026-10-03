@@ -1900,5 +1900,32 @@ if (new URLSearchParams(location.search).has("test")) {
   };
 }
 
+// --- Startup splash + version --------------------------------------------------
+// The version is "0.<last merged PR>" (scripts/write-version.mjs writes
+// docs/version.json at build time). The splash (index.html) fades out by CSS
+// after 2 seconds; this removes it for good and fills in the version.
+async function showVersion(): Promise<void> {
+  let label = "dev build";
+  try {
+    const res = await fetch("version.json", { cache: "no-store" });
+    const info = (await res.json()) as { version?: string };
+    if (info.version) label = info.version;
+  } catch {
+    /* no version.json (e.g. a plain checkout): leave the dev label */
+  }
+  for (const id of ["splashVersion", "menuVersion"]) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = id === "menuVersion" ? `Version ${label}` : label;
+  }
+}
+const splash = document.getElementById("splash");
+if (new URLSearchParams(location.search).has("test")) {
+  splash?.remove();
+} else if (splash) {
+  splash.addEventListener("click", () => splash.remove());
+  setTimeout(() => splash.remove(), 2500);
+}
+void showVersion();
+
 $("debugPanel").hidden = !debugOn();
 newGame();

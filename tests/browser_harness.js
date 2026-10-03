@@ -37,6 +37,8 @@ export function startStaticServer(port) {
     ".html": "text/html",
     ".js": "text/javascript",
     ".css": "text/css",
+    ".json": "application/json",
+    ".png": "image/png",
   };
   const server = createServer(async (req, res) => {
     const pathOnly = (req.url || "/").split("?")[0];
