@@ -17,6 +17,16 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm run build
+      # `npm run build` just wrote docs/version.json: "0.<last merged PR>", or
+      # "dev" when this commit isn't a PR merge (e.g. a PR-branch build). The
+      # APK is named after it so downloads can be told apart.
+      - name: Read the app version
+        id: ver
+        run: |
+          V=$(node -p "require('./docs/version.json').version")
+          if [ "$V" = "dev" ]; then V="dev-${GITHUB_SHA::7}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "App version: $V"
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -28,7 +38,9 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
+      - name: Name the APK after the version
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "cascade-break-${{ steps.ver.outputs.version }}.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: cascade-break-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: cascade-break-${{ steps.ver.outputs.version }}-debug-apk
+          path: cascade-break-${{ steps.ver.outputs.version }}.apk

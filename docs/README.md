@@ -84,9 +84,12 @@ its generated/build output is gitignored).
 **CI build (no local Android SDK needed):** every push/PR to `main` (and
 `workflow_dispatch`) runs `.github/workflows/android-apk.yml`, which builds
 `docs/`, syncs it into the Android project (`npm run cap:sync`), runs
-`./gradlew assembleDebug`, and uploads the resulting `app-debug.apk` as a
-downloadable workflow artifact — grab it from the run's Summary page and
-sideload it onto a connected phone (`adb install app-debug.apk`, or copy the
+`./gradlew assembleDebug`, and uploads the result as a downloadable workflow
+artifact named after the app version (`cascade-break-0.59-debug-apk`
+containing `cascade-break-0.59.apk`, where the version is `0.<last merged PR
+number>`; a PR-branch build is `dev-<commit>`) — grab it from the run's
+Summary page and sideload it onto a connected phone (`adb install
+cascade-break-0.59.apk`, or copy the
 file to the device and open it, with "install from unknown sources" allowed
 for the browser/file manager used).
 
