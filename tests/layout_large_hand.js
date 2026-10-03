@@ -304,7 +304,8 @@ async function testChrome(page, vp) {
   await q(`document.querySelector("#menuDebugBtn").click()`);
 }
 
-// Round-end recap: this round's scores for both sides plus running totals,
+// Round-end recap: this round's scores for both sides (the running totals are
+// already in the screen corners),
 // worded neutrally (the player who goes out doesn't always score more).
 async function testRoundEnd(page, vp) {
   const tag = `${vp.name} round-end`;
@@ -320,8 +321,7 @@ async function testRoundEnd(page, vp) {
              body: m.querySelector(".dialog-body")?.textContent,
              buttons: Array.from(m.querySelectorAll(".modal-actions button")).map(b => b.textContent) };
   })()`);
-  const wantBody =
-    "Your score this round: 180\nTheir score this round: 185\n\nTotal score — you: 340, AI: 420";
+  const wantBody = "Your score this round: 180\nTheir score this round: 185";
   if (!d.open || d.title !== "Round ended!" || d.body !== wantBody)
     fail(`${tag}: unexpected dialog ${JSON.stringify(d)}`);
   if (d.buttons.join() !== "Round 2,New game")
@@ -771,6 +771,37 @@ async function testJokerObligation(page, vp) {
     fail(`${tag}: unexpected status text ${JSON.stringify(s.label)}`);
 }
 
+// Both total scores live in the screen corners: the AI's top right, yours
+// bottom right -- with or without the opponent's "out" badge showing.
+async function testCornerScores(page, vp) {
+  const tag = `${vp.name} corner-scores`;
+  const q = (js) => page.evalJs(js);
+  const corners = () =>
+    q(`(() => {
+      const w = window.innerWidth;
+      const a = document.querySelector("#scoreP2").getBoundingClientRect();
+      const y = document.querySelector("#scoreP1").getBoundingClientRect();
+      return { aiGap: Math.round(w - a.right), youGap: Math.round(w - y.right), aiTop: Math.round(a.top) };
+    })()`);
+  for (const out of [false, true]) {
+    await q(`(() => {
+      const r = window.__cascadeTest.getGame().round;
+      r.ended = false; r.comeOut[1] = ${out};
+      window.__cascadeTest.render();
+    })()`);
+    const c = await corners();
+    const what = out ? "with the out badge" : "without the out badge";
+    if (c.aiGap > 24)
+      fail(
+        `${tag}: the AI's total should sit in the top-right corner ${what} (${c.aiGap}px from the edge)`,
+      );
+    if (c.youGap > 24)
+      fail(
+        `${tag}: your total should sit in the bottom-right corner ${what} (${c.youGap}px from the edge)`,
+      );
+  }
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -787,6 +818,7 @@ async function main() {
       await testHands(page, vp);
       await testTableau(page, vp);
       await testOwnerColors(page, vp);
+      await testCornerScores(page, vp);
       await testDialog(page, vp);
       await testChrome(page, vp);
       await testDoneDrawing(page, vp);
