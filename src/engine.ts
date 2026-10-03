@@ -267,7 +267,7 @@ function drawFromClosedPile(game: Game): void {
     throw new Error(
       r.part !== 1
         ? "Not in Part 1."
-        : "Already took from the open row this turn — the closed pile is no longer available.",
+        : "Already took from the cascade this turn — the pile is no longer available.",
     );
   }
   if (r.closedPile.length === 0) {
@@ -284,9 +284,9 @@ function drawFromClosedPile(game: Game): void {
 function drawFromOpenRow(game: Game, cardId: string): void {
   const r = game.round as Round;
   if (!canDrawFromRow(game))
-    throw new Error("Not in Part 1, or the open row is empty.");
+    throw new Error("Not in Part 1, or the cascade is empty.");
   const idx = r.openRow.findIndex((c) => c.id === cardId);
-  if (idx === -1) throw new Error("Card not in open row.");
+  if (idx === -1) throw new Error("Card not in the cascade.");
   const taken = r.openRow.splice(idx); // this card + everything after it
   r.hands[r.current].push(...taken);
   const bottomCard = taken[0];

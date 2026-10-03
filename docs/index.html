@@ -60,10 +60,10 @@
       <main id="banner" class="banner" hidden></main>
 
       <section class="deck-row">
-        <button id="pileBtn" class="pile" aria-label="Closed pile: tap to draw">
+        <button id="pileBtn" class="pile" aria-label="Pile: tap to draw">
           <span id="pileCount" class="pile-count">0</span>
         </button>
-        <div id="openRow" class="open-row" aria-label="Open row"></div>
+        <div id="openRow" class="open-row" aria-label="Cascade"></div>
       </section>
 
       <section id="tableau" class="tableau" aria-label="Table"></section>
@@ -115,9 +115,9 @@
         </button>
         <div id="actionBar" class="action-bar">
           <!-- Buttons appear only while they apply (see renderControls).
-               Drawing from the closed pile is done by tapping the pile, so
+               Drawing from the pile is done by tapping the pile, so
                drawPileBtn stays hidden and is only clicked programmatically. -->
-          <button id="drawPileBtn" hidden>Draw closed pile</button>
+          <button id="drawPileBtn" hidden>Draw from the pile</button>
           <button id="finishDrawingBtn" class="cta">Done drawing</button>
           <button id="layMeldBtn">Lay meld</button>
           <button id="addToMeldBtn">Add to meld</button>
