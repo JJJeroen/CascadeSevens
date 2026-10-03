@@ -597,6 +597,8 @@ function renderRearrangeView() {
             const cardEl = buildCardEl(cardById[cardId], {
                 selected: cardId === rearrangeSelectedCardId,
                 pickable: true,
+                // pre-existing cards keep their original owner; cards from your hand are yours
+                ownerId: (rearrange.originalOwnerByCardId[cardId] ?? 0),
             });
             cardEl.addEventListener("click", (ev) => {
                 ev.stopPropagation();
@@ -637,6 +639,7 @@ function renderRearrangeView() {
         const cardEl = buildCardEl(cardById[cardId], {
             selected: cardId === rearrangeSelectedCardId,
             pickable: true,
+            ownerId: (rearrange.originalOwnerByCardId[cardId] ?? 0),
         });
         cardEl.addEventListener("click", () => {
             rearrangeSelectedCardId =
@@ -1728,6 +1731,7 @@ $("menuHelpBtn").addEventListener("click", () => {
         "Draw: tap the pile for its top card, or tap a card in the cascade to take it and every card on top of it. Then tap Done drawing.",
         "Lay: put 3 or more cards on the table as a series (the same number in different suits, or a run in one suit). To come out, the series you lay in one turn must be worth 40 points or more (ace 25, 10-K 10, 2-9 5, joker 50). If they are worth less, you can lay more or take them back.",
         "Moving cards: drag back a series card you laid yourself (an end card of a run, or any card that leaves a valid series). To regroup any card on the table, even the AI's, use Rearrange… as long as every series is valid when you commit.",
+        "Points: the coloured bar at the bottom of each card shows who scores it: orange for you, blue for the AI (the same colours as the scores).",
         "Discard: drag a card onto the cascade to end your turn. Whoever empties their hand first ends the round. The first player past the goal (menu) wins the game.",
     ].join("\n\n"));
 });
