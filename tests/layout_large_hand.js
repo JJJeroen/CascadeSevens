@@ -710,6 +710,38 @@ async function testBlockedPullHint(page, vp) {
     fail(`${tag}: a plain tap should not show the hint`);
 }
 
+// Who scores a card is shown by a coloured bar along its bottom edge (orange =
+// you, blue = the AI) and the two scores use the same colours.
+async function testOwnerColors(page, vp) {
+  const tag = `${vp.name} owner-colors`;
+  const q = (js) => page.evalJs(js);
+  const YOU = "rgb(255, 179, 71)";
+  const THEM = "rgb(90, 169, 255)";
+  await q(`window.__t.setHand(5)`);
+  // the helper alternates owners: card 0 -> you, card 1 -> the AI, ...
+  await q(`window.__t.setTableau([window.__t.run("o1", "H", 0, 3)])`);
+  const s = await q(`(() => {
+    const shadow = (el) => getComputedStyle(el).boxShadow;
+    const cards = document.querySelectorAll("#tableau .card");
+    return {
+      first: shadow(cards[0]), second: shadow(cards[1]),
+      hand: shadow(document.querySelector("#hand .card")),
+      score1: getComputedStyle(document.querySelector("#scoreP1")).color,
+      score2: getComputedStyle(document.querySelector("#scoreP2")).color,
+    };
+  })()`);
+  if (!s.first.includes(YOU))
+    fail(`${tag}: your card should have the orange bar, got ${s.first}`);
+  if (!s.second.includes(THEM))
+    fail(`${tag}: the AI's card should have the blue bar, got ${s.second}`);
+  if (!s.hand.includes(YOU))
+    fail(`${tag}: your hand cards should have the orange bar, got ${s.hand}`);
+  if (s.score1 !== YOU)
+    fail(`${tag}: your score should be orange, got ${s.score1}`);
+  if (s.score2 !== THEM)
+    fail(`${tag}: the AI's score should be blue, got ${s.score2}`);
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -725,6 +757,7 @@ async function main() {
       await openPage(page, vp);
       await testHands(page, vp);
       await testTableau(page, vp);
+      await testOwnerColors(page, vp);
       await testDialog(page, vp);
       await testChrome(page, vp);
       await testDoneDrawing(page, vp);

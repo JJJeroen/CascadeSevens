@@ -13,6 +13,8 @@
   --green: #1f7a3d;
   --blue: #1f5fa8;
   --accent: #e8c14c;
+  --you: #ffb347; /* who scores a card: you ... */
+  --them: #5aa9ff; /* ... or the AI (also the score colours) */
   --brand: #1f08f0;
   --balloon: #5345d0;
   --text: #f7f5ed;
@@ -380,7 +382,11 @@ h2 {
   font-size: 1rem;
   color: var(--black);
   flex-shrink: 0;
-  box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.4);
+  /* The bar along the bottom edge shows who scores the card (--owner is set per
+     card below); it stays visible even where cards overlap sideways. */
+  box-shadow:
+    inset 0 -5px 0 var(--owner, transparent),
+    1px 1px 3px rgba(0, 0, 0, 0.4);
   user-select: none;
   position: relative;
 }
@@ -425,7 +431,7 @@ h2 {
   content: "J";
   position: absolute;
   right: 2px;
-  bottom: 2px;
+  bottom: 8px; /* clear of the owner bar */
   width: 12px;
   height: 12px;
   border-radius: 3px;
@@ -435,13 +441,12 @@ h2 {
   line-height: 12px;
   text-align: center;
 }
-.card.owner-1 {
-  outline: 2px solid #6fbf73;
-  outline-offset: -2px;
+.card.owner-1,
+#hand .card {
+  --owner: var(--you);
 }
 .card.owner-2 {
-  outline: 2px solid #6f9fbf;
-  outline-offset: -2px;
+  --owner: var(--them);
 }
 
 /* Only the open row gets the overlapping "cascade" look — it's a visual
@@ -497,7 +502,9 @@ h2 {
      overlap in the fan, which is the point: it should look raised, not
      jump in front. */
   margin-top: -12px;
-  box-shadow: 0 0 0 3px var(--accent);
+  box-shadow:
+    inset 0 -5px 0 var(--owner, transparent),
+    0 0 0 3px var(--accent);
 }
 /* Bigger + overlapping, scoped to the real (human) hand only -- #aiHand
    shares the .hand class for its debug-only row, which doesn't need either
@@ -764,4 +771,29 @@ h2 {
 #modalRoot .modal-box {
   pointer-events: auto;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+}
+
+/* Score colours match the owner bars on the cards. */
+#scoreP1,
+#scoreP2 {
+  font-weight: 700;
+}
+#scoreP1 {
+  color: var(--you);
+}
+#scoreP2 {
+  color: var(--them);
+}
+#scoreP1::before,
+#scoreP2::before {
+  font-size: 0.65rem;
+  font-weight: 600;
+  margin-right: 0.3rem;
+  opacity: 0.85;
+}
+#scoreP1::before {
+  content: "You";
+}
+#scoreP2::before {
+  content: "AI";
 }
