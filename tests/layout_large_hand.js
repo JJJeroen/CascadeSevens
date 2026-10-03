@@ -453,6 +453,73 @@ async function testSub40Popup(page, vp) {
     );
 }
 
+// Turn 0 by tapping: open card = take it (then pick a hand card), pile =
+// decline. A hint balloon explains it.
+async function testTurn0(page, vp) {
+  const tag = `${vp.name} turn0`;
+  const q = (js) => page.evalJs(js);
+  // New games until the human is the one asked (AI is switched off here).
+  let mine = false;
+  for (let i = 0; i < 30 && !mine; i++) {
+    await q(`document.querySelector("#newGameBtn").click()`);
+    mine = await q(
+      `window.__cascadeTest.getGame().round.part === "turn0" && window.__cascadeTest.turn0Askee() === 0`,
+    );
+  }
+  if (!mine)
+    return fail(`${tag}: never got a game where the human is asked first`);
+  await q(
+    `try { localStorage.removeItem("cascade.hintsSeen"); } catch {} window.__cascadeTest.render()`,
+  );
+  const bal = () =>
+    q(
+      `(() => { const b = document.querySelector("#balloon"); return b.hidden ? null : b.textContent.trim(); })()`,
+    );
+  if (!/tap the open card/i.test((await bal()) ?? ""))
+    fail(
+      `${tag}: expected the Turn 0 hint, got ${JSON.stringify(await bal())}`,
+    );
+  const buttons = await q(
+    `Array.from(document.querySelectorAll("#banner button")).length`,
+  );
+  if (buttons !== 0) fail(`${tag}: Take/Decline buttons should be gone`);
+  // tap the open card -> asks for a hand card
+  await q(`document.querySelector("#openRow .card").click()`);
+  if (!/tap the card from your hand/i.test((await bal()) ?? ""))
+    fail(
+      `${tag}: expected the place-a-card prompt, got ${JSON.stringify(await bal())}`,
+    );
+  // tap it again -> back to the offer
+  await q(`document.querySelector("#openRow .card").click()`);
+  if (!/tap the open card/i.test((await bal()) ?? ""))
+    fail(`${tag}: tapping the open card again should cancel the swap`);
+  // take it and place a hand card -> the offer is resolved (swap done)
+  const before = await q(
+    `document.querySelector("#openRow .card .rank").textContent + document.querySelector("#openRow .card .suit").textContent`,
+  );
+  await q(`document.querySelector("#openRow .card").click()`);
+  await q(`document.querySelector("#hand .card").click()`);
+  const after = await q(
+    `window.__cascadeTest.getGame().round.part === "turn0" ? window.__cascadeTest.turn0Askee() : "done"`,
+  );
+  if (after === 0)
+    fail(`${tag}: swapping a hand card in should resolve the human's offer`);
+  void before;
+  // fresh game, decline by tapping the pile
+  mine = false;
+  for (let i = 0; i < 30 && !mine; i++) {
+    await q(`document.querySelector("#newGameBtn").click()`);
+    mine = await q(
+      `window.__cascadeTest.getGame().round.part === "turn0" && window.__cascadeTest.turn0Askee() === 0`,
+    );
+  }
+  await q(`document.querySelector("#pileBtn").click()`);
+  const declined = await q(
+    `window.__cascadeTest.getGame().round.part === "turn0" ? window.__cascadeTest.turn0Askee() : "done"`,
+  );
+  if (declined === 0) fail(`${tag}: tapping the pile should decline the offer`);
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -473,6 +540,7 @@ async function main() {
       await testDoneDrawing(page, vp);
       await testOppStatus(page, vp);
       await testSub40Popup(page, vp);
+      await testTurn0(page, vp);
       await testRoundEnd(page, vp); // last: it leaves the round marked ended
     }
   } finally {
