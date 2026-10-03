@@ -30,6 +30,12 @@
           </svg>
         </button>
         <span class="round-label">Round <span id="roundNum">0</span></span>
+        <span
+          id="oppStatus"
+          class="opp-status"
+          title="Opponent: points toward coming out (40), or out"
+          hidden
+        ></span>
         <span id="scoreP2" class="score" title="Opponent's score">0</span>
         <nav id="menuPop" class="menu-pop" hidden>
           <button id="menuNewBtn">New</button>
@@ -103,7 +109,7 @@
                Drawing from the closed pile is done by tapping the pile, so
                drawPileBtn stays hidden and is only clicked programmatically. -->
           <button id="drawPileBtn" hidden>Draw closed pile</button>
-          <button id="finishDrawingBtn">Done drawing</button>
+          <button id="finishDrawingBtn" class="cta">Done drawing</button>
           <button id="layMeldBtn">Lay meld</button>
           <button id="addToMeldBtn">Add to meld</button>
           <button id="swapJokerBtn">Swap joker</button>
