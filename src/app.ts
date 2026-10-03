@@ -1359,7 +1359,9 @@ function renderControls(): void {
       const label = c ? cardText(c) : id;
       return id === r.rowObligationCardId
         ? `${label} (lay it in a series or discard it back)`
-        : `${label} (must lay it in a series)`;
+        : c?.rank === "JOKER"
+          ? "Joker (you must use it this turn)"
+          : `${label} (must lay it in a series)`;
     });
     obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : ""}`;
   } else {
@@ -1809,7 +1811,9 @@ function updateBalloon(
       const label = c ? cardText(c) : id;
       return id === r.rowObligationCardId
         ? `lay ${label} in a series or discard it back`
-        : `lay ${label} in a series`;
+        : c?.rank === "JOKER"
+          ? "use this joker in this turn"
+          : `lay ${label} in a series`;
     });
     showBalloon(
       `obligation:${r.pendingObligations.join(",")}`,
