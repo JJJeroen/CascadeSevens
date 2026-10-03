@@ -301,6 +301,68 @@ async function testChrome(page, vp) {
   await q(`document.querySelector("#menuDebugBtn").click()`);
 }
 
+// After taking from the open row the player must press "Done drawing"; make
+// sure the screen says so and that an early tap on a card explains itself.
+async function testDoneDrawing(page, vp) {
+  const tag = `${vp.name} done-drawing`;
+  const q = (js) => page.evalJs(js);
+  await q(`(() => {
+    const g = window.__cascadeTest.getGame();
+    g.round.part = 1; g.round.current = 0; g.round.rowDrawsThisPart1 = 1;
+    window.__t.setHand(9);
+    window.__t.setTableau([]);
+    try { localStorage.removeItem("cascade.hintsSeen"); } catch {}
+    window.__cascadeTest.render();
+  })()`);
+  const s = await q(`(() => {
+    const b = document.querySelector("#finishDrawingBtn");
+    const bl = document.querySelector("#balloon");
+    return { btnVisible: !b.hidden && b.getBoundingClientRect().height > 0,
+             btnClass: b.className, balloon: bl.hidden ? null : bl.textContent.trim() };
+  })()`);
+  if (!s.btnVisible || !s.btnClass.includes("cta"))
+    fail(
+      `${tag}: "Done drawing" should be visible and prominent: ${JSON.stringify(s)}`,
+    );
+  if (!s.balloon || !/Done drawing/.test(s.balloon))
+    fail(
+      `${tag}: expected a balloon pointing at Done drawing, got ${JSON.stringify(s.balloon)}`,
+    );
+  await q(`document.querySelector("#balloonClose").click()`);
+  await q(`document.querySelector("#hand .card").click()`);
+  const tapped = await q(
+    `document.querySelector("#balloon").textContent.trim()`,
+  );
+  if (!/Done drawing/.test(tapped))
+    fail(
+      `${tag}: tapping a card early should explain; got ${JSON.stringify(tapped)}`,
+    );
+}
+
+// Opponent's come-out progress next to the round label.
+async function testOppStatus(page, vp) {
+  const tag = `${vp.name} opp-status`;
+  const q = (js) => page.evalJs(js);
+  const read = () =>
+    q(
+      `(() => { const e = document.querySelector("#oppStatus"); return e.hidden ? null : e.textContent; })()`,
+    );
+  await q(
+    `(() => { const r = window.__cascadeTest.getGame().round; r.part = 2; r.current = 1; r.comeOut[1] = false; r.comeOutAccum[1] = 0; window.__cascadeTest.render(); })()`,
+  );
+  if ((await read()) !== null) fail(`${tag}: should be hidden before any meld`);
+  await q(
+    `(() => { const r = window.__cascadeTest.getGame().round; r.comeOutAccum[1] = 35; window.__cascadeTest.render(); })()`,
+  );
+  if ((await read()) !== "35/40")
+    fail(`${tag}: expected 35/40, got ${await read()}`);
+  await q(
+    `(() => { const r = window.__cascadeTest.getGame().round; r.comeOut[1] = true; window.__cascadeTest.render(); })()`,
+  );
+  if ((await read()) !== "out")
+    fail(`${tag}: expected "out", got ${await read()}`);
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -318,6 +380,8 @@ async function main() {
       await testTableau(page, vp);
       await testDialog(page, vp);
       await testChrome(page, vp);
+      await testDoneDrawing(page, vp);
+      await testOppStatus(page, vp);
     }
   } finally {
     if (page) {
