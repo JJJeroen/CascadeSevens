@@ -301,6 +301,30 @@ async function testChrome(page, vp) {
   await q(`document.querySelector("#menuDebugBtn").click()`);
 }
 
+// Round-end recap: this round's scores for both sides plus running totals,
+// worded neutrally (the player who goes out doesn't always score more).
+async function testRoundEnd(page, vp) {
+  const tag = `${vp.name} round-end`;
+  await page.evalJs(`(() => {
+    const g = window.__cascadeTest.getGame();
+    g.scores = [340, 420];
+    Object.assign(g.round, { ended: true, roundWinner: 0, roundScores: [180, 185] });
+    window.__cascadeTest.render();
+  })()`);
+  const d = await page.evalJs(`(() => {
+    const m = document.querySelector("#modalRoot");
+    return { open: !m.hidden, title: m.querySelector(".dialog-title")?.textContent,
+             body: m.querySelector(".dialog-body")?.textContent,
+             buttons: Array.from(m.querySelectorAll(".modal-actions button")).map(b => b.textContent) };
+  })()`);
+  const wantBody =
+    "Your score this round: 180\nTheir score this round: 185\n\nTotal score — you: 340, AI: 420";
+  if (!d.open || d.title !== "Round ended!" || d.body !== wantBody)
+    fail(`${tag}: unexpected dialog ${JSON.stringify(d)}`);
+  if (d.buttons.join() !== "Round 2,New game")
+    fail(`${tag}: unexpected buttons ${JSON.stringify(d.buttons)}`);
+}
+
 // After taking from the open row the player must press "Done drawing"; make
 // sure the screen says so and that an early tap on a card explains itself.
 async function testDoneDrawing(page, vp) {
@@ -382,6 +406,7 @@ async function main() {
       await testChrome(page, vp);
       await testDoneDrawing(page, vp);
       await testOppStatus(page, vp);
+      await testRoundEnd(page, vp); // last: it leaves the round marked ended
     }
   } finally {
     if (page) {
