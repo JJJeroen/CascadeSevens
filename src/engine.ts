@@ -276,7 +276,7 @@ function drawFromClosedPile(game: Game): void {
   }
   const card = r.closedPile.pop() as Card;
   r.hands[r.current].push(card);
-  logMsg(game, `Player ${r.current + 1} drew from the closed pile.`);
+  logMsg(game, `Player ${r.current + 1} drew from the pile.`);
   r.part = 2;
   r.lastDraw = null;
 }
@@ -297,7 +297,7 @@ function drawFromOpenRow(game: Game, cardId: string): void {
   r.rowDrawsThisPart1 += 1;
   logMsg(
     game,
-    `Player ${r.current + 1} took ${taken.length} card(s) from the open row (must meld or discard back ${bottomCard.rank}${bottomCard.suit || ""}).`,
+    `Player ${r.current + 1} took ${taken.length} card(s) from the cascade (must lay ${bottomCard.rank}${bottomCard.suit || ""} in a series or discard it back).`,
   );
   r.lastDraw = {
     source: "row",
@@ -356,7 +356,7 @@ function undoDraw(game: Game): void {
   r.rowDrawsThisPart1 -= 1;
   r.part = 1; // reverts finishDrawing too, if it had already happened
   r.lastDraw = null;
-  logMsg(game, `Player ${r.current + 1} undid taking from the open row.`);
+  logMsg(game, `Player ${r.current + 1} undid taking from the cascade.`);
 }
 
 // --- Meld validation ------------------------------------------------------
@@ -685,12 +685,12 @@ function layNewMeld(game: Game, cardSelections: SlotSpec[]): Meld {
     if (r.comeOutAccum[r.current] >= 40) {
       r.comeOut[r.current] = true;
       r.comeOutAttempt = null; // out for good: nothing left to take back
-      logMsg(game, `Player ${r.current + 1} has come out!`);
+      logMsg(game, `Player ${r.current + 1} came out!`);
     }
   }
   logMsg(
     game,
-    `Player ${r.current + 1} laid a new ${result.type} (${slots.map((s) => s.card.rank).join(",")}).`,
+    `Player ${r.current + 1} laid a new series (${slots.map((s) => s.card.rank).join(",")}).`,
   );
   return meld;
 }
@@ -844,7 +844,7 @@ function addToMeld(
   r.lastDraw = null;
   logMsg(
     game,
-    `Player ${r.current + 1} added ${card.rank}${card.suit || ""} to a ${meld.type}.`,
+    `Player ${r.current + 1} added ${card.rank}${card.suit || ""} to a series.`,
   );
 }
 
@@ -1043,7 +1043,7 @@ function pullFromMeld(
   r.lastDraw = null;
   logMsg(
     game,
-    `Player ${r.current + 1} pulled ${pulled.length} card(s) back from the tableau.`,
+    `Player ${r.current + 1} pulled ${pulled.length} card(s) back from the table.`,
   );
 }
 
@@ -1263,7 +1263,7 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   }
   r.rearrange = null;
   r.lastDraw = null;
-  logMsg(game, `Player ${r.current + 1} rearranged the tableau.`);
+  logMsg(game, `Player ${r.current + 1} rearranged the table.`);
   return { ok: true };
 }
 
@@ -1359,7 +1359,7 @@ function discard(game: Game, cardId: string): void {
   if (isObligated) clearObligations(r, [cardId]);
   logMsg(
     game,
-    `Player ${r.current + 1} discarded ${card.rank}${card.suit || ""}${isObligated ? " (the card taken from the row, back to the row)" : ""}.`,
+    `Player ${r.current + 1} discarded ${card.rank}${card.suit || ""}${isObligated ? " (the card taken from the cascade, back on the cascade)" : ""}.`,
   );
   if (hand.length === 0) {
     endRoundHandOut(game, r.current);
@@ -1433,7 +1433,7 @@ function scoreRound(game: Game): void {
   for (const p of [0, 1] as PlayerIdx[]) {
     logMsg(
       game,
-      `Player ${p + 1} round score: meld points ${meldPoints[p]}${breakdown[p] ? `, ${breakdown[p]}` : ""} = ${roundScores[p]}.`,
+      `Round score for Player ${p + 1}: ${roundScores[p]} (series points ${meldPoints[p]}${breakdown[p] ? `, ${breakdown[p]}` : ""}).`,
     );
   }
   logMsg(
