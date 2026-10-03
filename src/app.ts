@@ -629,7 +629,7 @@ function renderRearrangeView(): void {
       ? cardText(rearrange.cardById[r.rowObligationCardId])
       : null;
   $("tableauHint").textContent = stillOwed
-    ? `(drafting — nothing is final until you commit; click a card, then click a group -- or any card already in it -- to move it there — you still owe ${stillOwed} from the row this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
+    ? `(drafting — nothing is final until you commit; click a card, then click a group -- or any card already in it -- to move it there — you still owe ${stillOwed} from the cascade this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
     : "(drafting — nothing is final until you commit; click a card, then click a group -- or any card already in it -- to move it there)";
   const el = $("tableau");
   el.innerHTML = "";
@@ -1716,13 +1716,13 @@ function updateBalloon(
   if (r.part === 1) {
     showBalloon(
       "hint-draw",
-      "Tap the pile to draw, or tap a card in the open row to take it and everything on top.",
+      "Tap the pile to draw, or tap a card in the cascade to take it and everything on top.",
       true,
     );
   } else if (r.part === 2) {
     showBalloon(
       "hint-play",
-      "Drag cards to the table to meld, or onto the open row to discard.",
+      "Drag cards to the table to lay a series, or onto the cascade to discard.",
       true,
     );
   }
