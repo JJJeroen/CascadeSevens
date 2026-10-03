@@ -688,7 +688,9 @@ h2 {
   color: var(--muted);
   font-size: 0.7rem;
 }
-.opp-status + .score {
+/* Keep the AI's total in the corner whether or not the badge is showing: the
+   badge only takes over the auto margin while it is visible. */
+.opp-status:not([hidden]) + .score {
   margin-left: 0;
 }
 

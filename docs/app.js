@@ -372,7 +372,7 @@ function renderBanner() {
         const rs = r.roundScores;
         // Plain recap rather than "You won": the player who goes out is not
         // always the one who scores more this round (DESIGN.md 2.8).
-        fillDialog(modalBox, "Round ended!", `Your score this round: ${rs[0]}\nTheir score this round: ${rs[1]}\n\nTotal score — you: ${g.scores[0]}, AI: ${g.scores[1]}`, [
+        fillDialog(modalBox, "Round ended!", `Your score this round: ${rs[0]}\nTheir score this round: ${rs[1]}`, [
             { label: `Round ${g.roundNumber + 1}`, onClick: nextRound },
             { label: "New game", onClick: newGame, secondary: true },
         ], () => {

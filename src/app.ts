@@ -477,7 +477,7 @@ function renderBanner(): void {
     fillDialog(
       modalBox,
       "Round ended!",
-      `Your score this round: ${rs[0]}\nTheir score this round: ${rs[1]}\n\nTotal score — you: ${g.scores[0]}, AI: ${g.scores[1]}`,
+      `Your score this round: ${rs[0]}\nTheir score this round: ${rs[1]}`,
       [
         { label: `Round ${g.roundNumber + 1}`, onClick: nextRound },
         { label: "New game", onClick: newGame, secondary: true },
