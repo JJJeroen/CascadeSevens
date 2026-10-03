@@ -593,3 +593,16 @@ skips the browser's hit-testing entirely. Fixed with an explicit
 `document.elementFromPoint()` before/after and dispatching real
 `Input.dispatchMouseEvent` clicks via CDP. Lesson: verify real click flows
 with actual pointer events, not `.click()`, before calling a UI "tested."
+
+## Joker swaps: who is credited for the replacement card (2026-10-03)
+
+Clarified by Tommer: when a player adds a card to a set and in exchange takes
+the joker into their hand, the added card becomes the **opponent's** property.
+Implemented as "the replacement card keeps the owner of the joker's slot"
+(`swapJoker`; DESIGN.md §3 decision 23): swapping the opponent's joker leaves
+your card counting for them while the joker you take scores for you once you
+play it again (7-7-Joker = 60 for the opponent becomes 15 for them; your
+Q-Q-Joker then scores 70). Swapping out your own joker keeps the card yours.
+The swapper can't pull the replacement back (it isn't theirs), the card shows
+the opponent's colour, and the log says whose series it was. New tests:
+`tests/rules_check28.js` (credit, score swing, no pull-back, own joker, log).
