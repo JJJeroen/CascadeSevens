@@ -417,7 +417,27 @@ async function runSmokeFlow(page) {
   );
   await clickSelector(page, "#discardBtn");
   await new Promise((r) => setTimeout(r, 300));
-  const dialogAfterDiscard = await readErrorDialog(page);
+  let dialogAfterDiscard = await readErrorDialog(page);
+  if (dialogAfterDiscard && /lay 40 or more/.test(dialogAfterDiscard)) {
+    // The usual case: a plain 3-card meld is worth under 40, so coming out
+    // fails and the turn can't end (§2.4). The popup offers "Take back".
+    const handBeforeTakeBack = (await readHand(page)).length;
+    await page.evalJs(`Array.from(document.querySelectorAll(
+      '#dialogRoot .modal-actions button')).find(b => b.textContent === 'Take back').click()`);
+    await new Promise((r) => setTimeout(r, 300));
+    const handAfterTakeBack = (await readHand(page)).length;
+    if (handAfterTakeBack !== handBeforeTakeBack + meldIndices.length) {
+      fail(
+        `take back should return the ${meldIndices.length} melded cards to the hand: ${handBeforeTakeBack} -> ${handAfterTakeBack}`,
+      );
+      return;
+    }
+    // ...and now the turn can end.
+    await clickHandCardAtIndex(page, 0);
+    await clickSelector(page, "#discardBtn");
+    await new Promise((r) => setTimeout(r, 300));
+    dialogAfterDiscard = await readErrorDialog(page);
+  }
   if (dialogAfterDiscard) {
     fail(`discarding triggered an error dialog: ${dialogAfterDiscard}`);
     return;

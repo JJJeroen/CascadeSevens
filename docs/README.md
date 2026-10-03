@@ -186,7 +186,7 @@ would have: a player's 30-point come-out attempt was visibly sitting on the
 tableau, but the app still said "not come out yet" with no way to explain
 why. Root cause: `comeOutAccum` was a single value reset to 0 at the start
 of every turn, so a below-40 attempt effectively evaporated the moment the
-turn ended. Confirmed against the game's designer: **come-out progress
+turn ended. (Superseded 2026-10-03: come-out now needs 40+ within a single turn, DESIGN.md §3 decision 22.) Confirmed against the game's designer at the time: **come-out progress
 carries forward across turns** — a 30-point attempt today plus a 15-point
 meld three turns later still crosses 40 and comes out. Fixed by making
 `comeOutAccum` a per-player array that's only ever incremented, never reset

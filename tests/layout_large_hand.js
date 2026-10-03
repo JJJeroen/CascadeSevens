@@ -91,7 +91,10 @@ async function openPage(page, vp) {
   await page.send("Page.navigate", {
     url: `http://localhost:${PORT}/?test=1&t=${Date.now()}`,
   });
-  await new Promise((r) => setTimeout(r, 700));
+  for (let i = 0; i < 50; i++) {
+    if (await page.evalJs(`!!window.__cascadeTest`)) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
   await page.evalJs(`window.__cascadeTest.disableAI()`);
   await page.evalJs(PAGE_HELPERS);
 }
@@ -378,13 +381,76 @@ async function testOppStatus(page, vp) {
   await q(
     `(() => { const r = window.__cascadeTest.getGame().round; r.comeOutAccum[1] = 35; window.__cascadeTest.render(); })()`,
   );
-  if ((await read()) !== "35/40")
-    fail(`${tag}: expected 35/40, got ${await read()}`);
+  if ((await read()) !== null)
+    fail(`${tag}: progress below 40 is no longer shown, got ${await read()}`);
   await q(
     `(() => { const r = window.__cascadeTest.getGame().round; r.comeOut[1] = true; window.__cascadeTest.render(); })()`,
   );
   if ((await read()) !== "out")
     fail(`${tag}: expected "out", got ${await read()}`);
+}
+
+// Under-40 come-out: ending the turn with under 40 on the table opens the
+// popup; "Keep laying" leaves everything, "Take back" returns the cards.
+async function testSub40Popup(page, vp) {
+  const tag = `${vp.name} sub40`;
+  const q = (js) => page.evalJs(js);
+  const state = () =>
+    q(`(() => ({
+      hand: document.querySelectorAll("#hand .card").length,
+      table: document.querySelectorAll("#tableau .card").length,
+      open: !document.querySelector("#dialogRoot").hidden,
+      title: document.querySelector("#dialogRoot .dialog-title")?.textContent ?? null,
+      body: document.querySelector("#dialogRoot .dialog-body")?.textContent ?? null,
+    }))()`);
+  // fresh game first: it clears selections left over from tests that poke state
+  await q(`document.querySelector("#newGameBtn").click()`);
+  await q(`(() => {
+    const g = window.__cascadeTest.getGame();
+    const r = g.round;
+    r.part = 2; r.current = 0; r.ended = false; r.pendingObligations = []; r.rowObligationCardId = null;
+    r.comeOut[0] = false; r.comeOutAccum[0] = 0; r.comeOutAttempt = null;
+    r.hands[0] = ["QS","QH","QD","2C","5D","9H","3S"].map((id) => ({ id, rank: id.slice(0, -1), suit: id.slice(-1) }));
+    r.tableau = [];
+    window.__cascadeTest.render();
+  })()`);
+  const click = async (sel, i = 0) => {
+    const ok = await q(`(() => {
+      const e = document.querySelectorAll(${JSON.stringify(sel)})[${i}];
+      if (!e) return false;
+      e.click();
+      return true;
+    })()`);
+    if (!ok) throw new Error(`${tag}: nothing to click for ${sel} [${i}]`);
+  };
+  // by card id: the hand's display order carries over from earlier tests
+  const byId = (id) => `#hand .card[data-card-id="${id}"]`;
+  for (const id of ["QS", "QH", "QD"]) await click(byId(id));
+  await click("#layMeldBtn");
+  const laid = await state();
+  if (laid.table !== 3 || laid.hand !== 4)
+    return fail(
+      `${tag}: expected the 30-point meld on the table, got ${JSON.stringify(laid)}`,
+    );
+  await click(byId("2C"));
+  await click("#discardBtn");
+  let st = await state();
+  if (!st.open || !/lay 40 or more/.test(st.title ?? ""))
+    return fail(
+      `${tag}: ending the turn at 30 should open the popup, got ${JSON.stringify(st)}`,
+    );
+  await click("#dialogRoot .modal-actions button", 0); // Keep laying
+  st = await state();
+  if (st.open || st.table !== 3 || st.hand !== 4)
+    fail(`${tag}: "Keep laying" should change nothing: ${JSON.stringify(st)}`);
+  // 2C is still selected from the first attempt (selecting again would toggle it off)
+  await click("#discardBtn");
+  await click("#dialogRoot .modal-actions button", 1); // Take back
+  st = await state();
+  if (st.open || st.table !== 0 || st.hand !== 7)
+    fail(
+      `${tag}: "Take back" should return all 3 cards: ${JSON.stringify(st)}`,
+    );
 }
 
 // Turn 0 by tapping: open card = take it (then pick a hand card), pile =
@@ -473,6 +539,7 @@ async function main() {
       await testChrome(page, vp);
       await testDoneDrawing(page, vp);
       await testOppStatus(page, vp);
+      await testSub40Popup(page, vp);
       await testTurn0(page, vp);
       await testRoundEnd(page, vp); // last: it leaves the round marked ended
     }

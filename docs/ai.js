@@ -137,6 +137,28 @@ function findCandidateRuns(hand, jokersLeft) {
 // criteria actually asked for: a fallback for a stranded obligation
 // (tryResolveObligationViaRearrange below), not a reason to take on MORE
 // obligations in the first place.
+// Greedy estimate of the points of disjoint sets/runs this hand could lay in
+// one turn (the same highest-value-first order playPart2 uses). Before coming
+// out the AI needs 40 of these within a single turn (§2.4, revised
+// 2026-10-03), so a row pickup that can't get there is pointless: it would
+// just be taken back and discarded again, round and round.
+function comeOutPotential(cards) {
+    let rest = cards.slice();
+    let total = 0;
+    for (let guard = 0; guard < 8; guard++) {
+        const jokers = rest.filter((c) => c.rank === "JOKER");
+        const best = [
+            ...findCandidateSets(rest, jokers),
+            ...findCandidateRuns(rest, jokers),
+        ].sort((a, b) => b.value - a.value)[0];
+        if (!best)
+            break;
+        total += best.value;
+        const used = new Set(best.slots.map((sl) => sl.cardId));
+        rest = rest.filter((c) => !used.has(c.id));
+    }
+    return total;
+}
 function canResolvePickup(hand, openRow, cardId) {
     const hypotheticalHand = hand.concat(openRow);
     const jokersLeft = hypotheticalHand.filter((c) => c.rank === "JOKER");
@@ -173,6 +195,9 @@ function pickDraw(game) {
         // would wrongly reject perfectly good pickups the hand contributes
         // nothing to.
         if (!canResolvePickup(hand, scoop, bottom.id))
+            continue;
+        if (!CascadeEngine.hasComeOut(game) &&
+            comeOutPotential(hand.concat(scoop)) < 40)
             continue;
         const scoopValue = scoop.reduce((s, c) => s + CascadeEngine.pointValue(c.rank), 0);
         const score = scoopValue - (scoop.length - 1) * 5; // mild penalty for extra clutter cards
@@ -507,6 +532,12 @@ function takeTurn(game, callbacks) {
     if (r.ended) {
         callbacks.onStateChanged();
         return;
+    }
+    // Come-out needs 40+ within one turn (§2.4, revised 2026-10-03): if the
+    // melds laid this turn fell short, take them back rather than being stuck
+    // unable to end the turn.
+    if (CascadeEngine.comeOutShortfall(game) > 0) {
+        CascadeEngine.takeBackUnqualifiedMelds(game);
     }
     callbacks.onStateChanged();
     if (CascadeEngine.canProceedToDiscard(game)) {

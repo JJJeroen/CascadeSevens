@@ -72,6 +72,13 @@ export interface RearrangeSession {
   nextGroupId: number;
 }
 
+export interface ComeOutAttempt {
+  meldIds: string[]; // melds laid this turn before coming out
+  pendingObligations: string[]; // state from just before the first one
+  rowObligationCardId: string | null;
+  lastDraw: LastDraw | null;
+}
+
 export type RoundPart = "turn0" | 1 | 2 | 3;
 
 export type EndReason = "handout" | "pile-empty";
@@ -92,7 +99,13 @@ export interface Round {
   lastDraw: LastDraw | null;
   rearrange: RearrangeSession | null;
   rowDrawsThisPart1: number;
+  // Points of NEW melds the current player has laid THIS turn while not yet
+  // come out (DESIGN.md 2.4, revised 2026-10-03: 40+ must be reached within a
+  // single turn -- it no longer carries over). Must be 0 or the player has
+  // come out before they may end the turn.
   comeOutAccum: [number, number];
+  // What to restore if the player takes this turn's under-40 melds back.
+  comeOutAttempt: ComeOutAttempt | null;
   comeOutMetThisTurn: boolean;
   log: string[];
   ended: boolean;
