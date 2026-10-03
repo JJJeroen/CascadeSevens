@@ -970,14 +970,23 @@ function swapJoker(
     }
   }
   hand.splice(ci, 1);
-  meld.slots[slotIdx] = { card: replacement, ownerId: r.current, wildAs: null };
+  // The replacement card keeps the joker slot's owner (DESIGN.md 2.8, decision
+  // 23): swapping a joker out of the OPPONENT's series leaves your card
+  // credited to the opponent, while the joker itself comes into your hand and
+  // scores for you when you play it again. Swapping out your own joker keeps
+  // the card yours.
+  meld.slots[slotIdx] = {
+    card: replacement,
+    ownerId: slot.ownerId,
+    wildAs: null,
+  };
   hand.push(slot.card); // joker returns to hand
   r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
   clearObligations(r, [replacement.id]);
   r.lastDraw = null;
   logMsg(
     game,
-    `Player ${r.current + 1} swapped a joker for ${replacement.rank}${replacement.suit || ""}.`,
+    `Player ${r.current + 1} swapped a joker${slot.ownerId === r.current ? "" : ` out of Player ${slot.ownerId + 1}'s series`} for ${replacement.rank}${replacement.suit || ""}${slot.ownerId === r.current ? "" : ` (it stays with Player ${slot.ownerId + 1})`}.`,
   );
 }
 

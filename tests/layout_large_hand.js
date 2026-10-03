@@ -546,6 +546,20 @@ async function testLog(page, vp) {
     fail(`${tag}: unexpected wording: ${JSON.stringify(s.text)}`);
   if (/Player [12]/.test(s.first))
     fail(`${tag}: "Player N" should read You / The AI`);
+  // the joker-swap line names whose series it was and who keeps the card
+  await q(`(() => {
+    const g = window.__cascadeTest.getGame();
+    g.round.log = ["Player 1 swapped a joker out of Player 2's series for 7D (it stays with Player 2)."];
+    window.__cascadeTest.render();
+  })()`);
+  const swapLine = await q(
+    `document.querySelector("#log").lastElementChild.textContent`,
+  );
+  if (
+    swapLine !==
+    "You swapped a joker out of The AI's series for 7D (it stays with the AI)."
+  )
+    fail(`${tag}: unexpected swap log wording: ${JSON.stringify(swapLine)}`);
   await q(`document.querySelector("#menuDebugBtn").click()`); // hide it again
 }
 
