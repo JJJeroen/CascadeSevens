@@ -1348,14 +1348,28 @@ function renderControls(): void {
   }
 }
 
+// The engine logs neutrally ("Player 1", "P2"); show it in the app's terms.
+function friendlyLog(msg: string): string {
+  return msg
+    .replace(/Player 1's/g, "Your")
+    .replace(/Player 2's/g, "The AI's")
+    .replace(/Player 1 starts/g, "You start")
+    .replace(/Player 1/g, "You")
+    .replace(/Player 2/g, "The AI")
+    .replace(/\bP1\b/g, "you")
+    .replace(/\bP2\b/g, "the AI");
+}
+
 function renderLog(): void {
   const el = $("log");
   el.innerHTML = "";
   (game as Game).round?.log.forEach((msg) => {
     const d = document.createElement("div");
-    d.textContent = msg;
+    d.textContent = friendlyLog(msg);
     el.appendChild(d);
   });
+  // Oldest first, scrolled to the bottom: the newest lines are the ones in view.
+  el.scrollTop = el.scrollHeight;
 }
 
 // --- Action buttons ----------------------------------------------------

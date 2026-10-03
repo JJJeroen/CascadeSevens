@@ -520,6 +520,39 @@ async function testTurn0(page, vp) {
   if (declined === 0) fail(`${tag}: tapping the pile should decline the offer`);
 }
 
+// The log (debug panel) shows the NEWEST lines, scrolled to the bottom, in the
+// app's own words: "You" / "The AI", not "Player 1" / "Player 2".
+async function testLog(page, vp) {
+  const tag = `${vp.name} log`;
+  const q = (js) => page.evalJs(js);
+  await q(`document.querySelector("#menuDebugBtn").click()`); // show the debug panel
+  await q(`(() => {
+    const g = window.__cascadeTest.getGame();
+    g.round.log = Array.from({ length: 30 }, (_, i) => "Player " + (i % 2 + 1) + " did thing " + (i + 1) + ".");
+    g.round.log.push("Round over (handout). Round scores: P1 80, P2 75. Totals: P1 200, P2 300.");
+    window.__cascadeTest.render();
+  })()`);
+  const s = await q(`(() => {
+    const el = document.querySelector("#log");
+    const last = el.lastElementChild.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    return { text: el.lastElementChild.textContent, first: el.firstElementChild.textContent,
+             lastVisible: last.bottom <= box.bottom + 1 && last.top >= box.top - 1,
+             firstVisible: el.firstElementChild.getBoundingClientRect().bottom > box.top + 1 };
+  })()`);
+  if (!s.lastVisible) fail(`${tag}: the newest log line should be in view`);
+  if (s.firstVisible)
+    fail(`${tag}: with 31 lines the oldest should be scrolled out of view`);
+  if (
+    s.text !==
+    "Round over (handout). Round scores: you 80, the AI 75. Totals: you 200, the AI 300."
+  )
+    fail(`${tag}: unexpected wording: ${JSON.stringify(s.text)}`);
+  if (/Player [12]/.test(s.first))
+    fail(`${tag}: "Player N" should read You / The AI`);
+  await q(`document.querySelector("#menuDebugBtn").click()`); // hide it again
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -539,6 +572,7 @@ async function main() {
       await testChrome(page, vp);
       await testDoneDrawing(page, vp);
       await testOppStatus(page, vp);
+      await testLog(page, vp);
       await testSub40Popup(page, vp);
       await testTurn0(page, vp);
       await testRoundEnd(page, vp); // last: it leaves the round marked ended

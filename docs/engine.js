@@ -233,7 +233,7 @@ function drawFromClosedPile(game) {
     }
     const card = r.closedPile.pop();
     r.hands[r.current].push(card);
-    logMsg(game, `Player ${r.current + 1} drew from the closed pile.`);
+    logMsg(game, `Player ${r.current + 1} drew from the pile.`);
     r.part = 2;
     r.lastDraw = null;
 }
@@ -252,7 +252,7 @@ function drawFromOpenRow(game, cardId) {
     r.pendingObligations = [bottomCard.id]; // supersedes any earlier row-take's obligation this Part 1
     r.rowObligationCardId = bottomCard.id;
     r.rowDrawsThisPart1 += 1;
-    logMsg(game, `Player ${r.current + 1} took ${taken.length} card(s) from the open row (must meld or discard back ${bottomCard.rank}${bottomCard.suit || ""}).`);
+    logMsg(game, `Player ${r.current + 1} took ${taken.length} card(s) from the cascade (must lay ${bottomCard.rank}${bottomCard.suit || ""} in a series or discard it back).`);
     r.lastDraw = {
         source: "row",
         takenCards: taken.slice(),
@@ -306,7 +306,7 @@ function undoDraw(game) {
     r.rowDrawsThisPart1 -= 1;
     r.part = 1; // reverts finishDrawing too, if it had already happened
     r.lastDraw = null;
-    logMsg(game, `Player ${r.current + 1} undid taking from the open row.`);
+    logMsg(game, `Player ${r.current + 1} undid taking from the cascade.`);
 }
 // --- Meld validation ------------------------------------------------------
 function orderedRankValue(rank, aceHigh) {
@@ -611,10 +611,10 @@ function layNewMeld(game, cardSelections) {
         if (r.comeOutAccum[r.current] >= 40) {
             r.comeOut[r.current] = true;
             r.comeOutAttempt = null; // out for good: nothing left to take back
-            logMsg(game, `Player ${r.current + 1} has come out!`);
+            logMsg(game, `Player ${r.current + 1} came out!`);
         }
     }
-    logMsg(game, `Player ${r.current + 1} laid a new ${result.type} (${slots.map((s) => s.card.rank).join(",")}).`);
+    logMsg(game, `Player ${r.current + 1} laid a new series (${slots.map((s) => s.card.rank).join(",")}).`);
     return meld;
 }
 function clearObligations(r, cardIds) {
@@ -745,7 +745,7 @@ function addToMeld(game, meldId, cardId, wildAs) {
     }
     clearObligations(r, [card.id]);
     r.lastDraw = null;
-    logMsg(game, `Player ${r.current + 1} added ${card.rank}${card.suit || ""} to a ${meld.type}.`);
+    logMsg(game, `Player ${r.current + 1} added ${card.rank}${card.suit || ""} to a series.`);
 }
 // A meld always has at least one real (non-joker) card — enforced at
 // creation (tryAsSet/tryAsRun both reject an all-joker selection) — so
@@ -919,7 +919,7 @@ function pullFromMeld(game, meldId, cardIds) {
     for (const slot of pulled)
         r.hands[r.current].push(slot.card);
     r.lastDraw = null;
-    logMsg(game, `Player ${r.current + 1} pulled ${pulled.length} card(s) back from the tableau.`);
+    logMsg(game, `Player ${r.current + 1} pulled ${pulled.length} card(s) back from the table.`);
 }
 // --- Full tableau rearrange session (§2.3, added 2026-07-27) --------------
 // A draft-then-commit workflow, distinct from the single-action pull
@@ -1122,7 +1122,7 @@ function commitRearrange(game) {
     }
     r.rearrange = null;
     r.lastDraw = null;
-    logMsg(game, `Player ${r.current + 1} rearranged the tableau.`);
+    logMsg(game, `Player ${r.current + 1} rearranged the table.`);
     return { ok: true };
 }
 // --- Part 3: discard --------------------------------------------------------
@@ -1204,7 +1204,7 @@ function discard(game, cardId) {
     r.openRow.push(card);
     if (isObligated)
         clearObligations(r, [cardId]);
-    logMsg(game, `Player ${r.current + 1} discarded ${card.rank}${card.suit || ""}${isObligated ? " (the card taken from the row, back to the row)" : ""}.`);
+    logMsg(game, `Player ${r.current + 1} discarded ${card.rank}${card.suit || ""}${isObligated ? " (the card taken from the cascade, back on the cascade)" : ""}.`);
     if (hand.length === 0) {
         endRoundHandOut(game, r.current);
         return;
@@ -1268,7 +1268,7 @@ function scoreRound(game) {
     game.scores[1] += roundScores[1];
     r.roundScores = roundScores;
     for (const p of [0, 1]) {
-        logMsg(game, `Player ${p + 1} round score: meld points ${meldPoints[p]}${breakdown[p] ? `, ${breakdown[p]}` : ""} = ${roundScores[p]}.`);
+        logMsg(game, `Round score for Player ${p + 1}: ${roundScores[p]} (series points ${meldPoints[p]}${breakdown[p] ? `, ${breakdown[p]}` : ""}).`);
     }
     logMsg(game, `Round over (${r.endReason}). Round scores: P1 ${roundScores[0]}, P2 ${roundScores[1]}. Totals: P1 ${game.scores[0]}, P2 ${game.scores[1]}.`);
     checkGameEnd(game);

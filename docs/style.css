@@ -569,12 +569,10 @@ h2 {
 }
 
 #log {
-  max-height: 160px;
+  max-height: 160px; /* about 8 lines */
   overflow-y: auto;
   font-size: 0.8rem;
   color: var(--muted);
-  display: flex;
-  flex-direction: column-reverse;
 }
 #log div {
   padding: 0.15rem 0;
