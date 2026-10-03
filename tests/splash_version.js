@@ -38,6 +38,17 @@ async function main() {
     });
 
     await load(page, "?t=" + Date.now());
+    // the version is fetched asynchronously: wait for it (the splash itself
+    // is up for 2 seconds, so there is plenty of time)
+    for (let i = 0; i < 15; i++) {
+      if (
+        await page.evalJs(
+          `!!document.querySelector("#splashVersion")?.textContent`,
+        )
+      )
+        break;
+      await sleep(100);
+    }
     const s = await page.evalJs(`(() => {
       const sp = document.querySelector("#splash");
       if (!sp) return null;

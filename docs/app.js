@@ -1686,7 +1686,9 @@ async function showVersion() {
     try {
         const res = await fetch("version.json", { cache: "no-store" });
         const info = (await res.json());
-        if (info.version)
+        // "dev" is what the build script writes when there is no merged PR
+        // to number the build after (e.g. a PR-branch build in CI).
+        if (info.version && info.version !== "dev")
             label = info.version;
     }
     catch {
