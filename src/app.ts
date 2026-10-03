@@ -242,6 +242,7 @@ function newGame(): void {
   targetedMeldId = null;
   turn0UiMode = "idle";
   handDisplayOrder = [];
+  hideBalloon(); // don't carry a leftover note into the new game
   render();
   scheduleIfAITurn();
 }
@@ -252,6 +253,7 @@ function nextRound(): void {
   targetedMeldId = null;
   turn0UiMode = "idle";
   handDisplayOrder = [];
+  hideBalloon();
   render();
   scheduleIfAITurn();
 }
@@ -427,32 +429,9 @@ function renderBanner(): void {
   if (r.part === "turn0") {
     const askee = CascadeEngine.turn0CurrentAskee(g);
     if (askee === 0) {
-      banner.hidden = false;
-      const starter = r.openRow[r.openRow.length - 1];
-      if (turn0UiMode === "idle") {
-        banner.appendChild(
-          textEl(
-            `Turn 0: take the starter card (${cardText(starter)}) into your hand?`,
-          ),
-        );
-        banner.appendChild(
-          button("Take", () => {
-            turn0UiMode = "select-swap";
-            render();
-          }),
-        );
-        banner.appendChild(
-          button("Decline", () => {
-            CascadeEngine.turn0Decline(g);
-            render();
-            scheduleIfAITurn();
-          }),
-        );
-      } else {
-        banner.appendChild(
-          textEl("Click a card in your hand below to place it onto the row."),
-        );
-      }
+      // Taking / declining is done by tapping the open card / the pile (see
+      // toggleTurn0Take and the pile handler), explained by a hint balloon.
+      banner.hidden = true;
       return;
     }
     banner.hidden = false;
@@ -476,6 +455,14 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
   return b;
 }
 
+// Turn 0, human's offer: tapping the open (starter) card means "swap it for a
+// card from my hand" -- tap again to change your mind; tapping the pile
+// declines instead.
+function toggleTurn0Take(): void {
+  turn0UiMode = turn0UiMode === "idle" ? "select-swap" : "idle";
+  render();
+}
+
 function renderOpenRow(): void {
   const el = $("openRow");
   el.innerHTML = "";
@@ -483,43 +470,49 @@ function renderOpenRow(): void {
   const r = g.round as Round;
   const pickable =
     r.part === 1 && r.current === 0 && CascadeEngine.canDrawFromRow(g);
+  const turn0Mine =
+    r.part === "turn0" && CascadeEngine.turn0CurrentAskee(g) === 0;
   // Keep the newest discard in view when the row grows past the screen.
   const grew = r.openRow.length > lastOpenRowLen;
   lastOpenRowLen = r.openRow.length;
   r.openRow.forEach((card, idx) => {
     el.appendChild(
       buildCardEl(card, {
-        pickable,
-        onClick: pickable
-          ? () => {
-              const hand = r.hands[0];
-              const scoopCards = r.openRow.slice(idx); // this card + everything discarded after it
-              const take = (): void => {
-                try {
-                  CascadeEngine.drawFromOpenRow(g, card.id);
-                  render();
-                  if ((g.round as Round).ended) return;
-                  scheduleIfAITurn();
-                } catch (e) {
-                  showError(errMsg(e));
+        pickable: pickable || (turn0Mine && idx === r.openRow.length - 1),
+        onClick: turn0Mine
+          ? idx === r.openRow.length - 1
+            ? toggleTurn0Take
+            : null
+          : pickable
+            ? () => {
+                const hand = r.hands[0];
+                const scoopCards = r.openRow.slice(idx); // this card + everything discarded after it
+                const take = (): void => {
+                  try {
+                    CascadeEngine.drawFromOpenRow(g, card.id);
+                    render();
+                    if ((g.round as Round).ended) return;
+                    scheduleIfAITurn();
+                  } catch (e) {
+                    showError(errMsg(e));
+                  }
+                };
+                if (!CascadeAI.canResolvePickup(hand, scoopCards, card.id)) {
+                  const scoop = scoopCards.length;
+                  showDialog(
+                    "Take this card anyway?",
+                    `Taking this card would also scoop ${scoop} card(s), and ${cardText(card)} must be melded this turn — ` +
+                      `but no legal meld for it seems possible with your current hand.`,
+                    [
+                      { label: "Cancel", secondary: true },
+                      { label: "Take it anyway", onClick: take },
+                    ],
+                  );
+                  return;
                 }
-              };
-              if (!CascadeAI.canResolvePickup(hand, scoopCards, card.id)) {
-                const scoop = scoopCards.length;
-                showDialog(
-                  "Take this card anyway?",
-                  `Taking this card would also scoop ${scoop} card(s), and ${cardText(card)} must be melded this turn — ` +
-                    `but no legal meld for it seems possible with your current hand.`,
-                  [
-                    { label: "Cancel", secondary: true },
-                    { label: "Take it anyway", onClick: take },
-                  ],
-                );
-                return;
+                take();
               }
-              take();
-            }
-          : null,
+            : null,
       }),
     );
   });
@@ -1606,6 +1599,8 @@ function showBalloon(key: string, text: string, persist = false): void {
 }
 
 function hideBalloon(): void {
+  if (infoTimer) clearTimeout(infoTimer);
+  infoTimer = null;
   balloon = null;
   $("balloon").hidden = true;
 }
@@ -1636,6 +1631,25 @@ function updateBalloon(
   hand: Card[],
 ): void {
   if (balloon?.key === "info") return; // a "why not" note is on screen
+  if (r.part === "turn0" && !g.gameOver) {
+    const mine = CascadeEngine.turn0CurrentAskee(g) === 0;
+    const want = !mine
+      ? null
+      : turn0UiMode === "idle"
+        ? {
+            key: "hint-turn0",
+            persist: true,
+            text: "Turn 0: tap the open card to swap it for a card from your hand, or tap the pile to decline.",
+          }
+        : {
+            key: "turn0-place",
+            persist: false,
+            text: "Now tap the card from your hand to put on the cascade.",
+          };
+    if (balloon && balloon.key !== want?.key) hideBalloon();
+    if (want) showBalloon(want.key, want.text, want.persist);
+    return;
+  }
   if (isHumanTurn && !rearranging && r.pendingObligations.length > 0) {
     const parts = r.pendingObligations.map((id) => {
       const c = hand.find((h) => h.id === id);
@@ -1798,12 +1812,15 @@ $("menuGoalBtn").addEventListener("click", () => {
 
 $("menuHelpBtn").addEventListener("click", () => {
   closeMenu();
+  // Wording follows the Figma file: pile, cascade, table, hand, round, turn,
+  // game ("series" for a laid set or run).
   showDialog(
     "How to play",
     [
-      "Draw from the closed pile (tap it) or take a card from the open row, along with everything on top of it.",
-      "Lay sets or runs of 3+ cards on the table. Your first melds must add up to 40 points to come out.",
-      "End your turn by dragging a card onto the open row. First to empty their hand wins the round.",
+      "Each turn: draw, lay series on the table, then discard.",
+      "Draw: tap the pile for its top card, or tap a card in the cascade to take it and every card on top of it. Then tap Done drawing.",
+      "Lay: put 3 or more cards on the table as a series (the same number in different suits, or a run in one suit). To come out, your first series must be worth 40 points or more (ace 25, 10-K 10, 2-9 5, joker 50).",
+      "Discard: drag a card onto the cascade to end your turn. Whoever empties their hand first ends the round. The first player past the goal (menu) wins the game.",
     ].join("\n\n"),
   );
 });
@@ -1815,16 +1832,26 @@ $("menuDebugBtn").addEventListener("click", () => {
 
 // Tap the closed pile to draw (Figma: no 'draw' button).
 $("pileBtn").addEventListener("click", () => {
+  const g = game as Game;
+  const r = g.round as Round;
+  if (!g.gameOver && !r.ended && r.part === "turn0") {
+    if (CascadeEngine.turn0CurrentAskee(g) !== 0)
+      return showInfo("Wait for the AI's turn.");
+    if (turn0UiMode === "select-swap")
+      return showInfo(
+        "Tap a card from your hand to put on the cascade, or tap the open card again to cancel.",
+      );
+    CascadeEngine.turn0Decline(g);
+    render();
+    scheduleIfAITurn();
+    return;
+  }
   const draw = $<HTMLButtonElement>("drawPileBtn");
   if (!draw.disabled) {
     draw.click();
     return;
   }
-  const g = game as Game;
-  const r = g.round as Round;
   if (g.gameOver || r.ended) return;
-  if (r.part === "turn0")
-    return showInfo("First take or decline the starter card.");
   if (r.current !== 0) return showInfo("Wait for the AI's turn.");
   if (r.rearrange) return showInfo("Finish or cancel the rearrange first.");
   showInfo("You can't draw from the pile right now.");

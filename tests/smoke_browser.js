@@ -222,16 +222,6 @@ async function clickSelector(page, selector) {
   );
 }
 
-async function clickButtonWithText(page, text) {
-  return page.evalJs(`(() => {
-    const btns = Array.from(document.querySelectorAll('button'));
-    const b = btns.find(b => b.textContent.trim() === ${JSON.stringify(text)});
-    if (!b) return false;
-    b.click();
-    return true;
-  })()`);
-}
-
 async function readHand(page) {
   return page.evalJs(`Array.from(document.querySelectorAll('#hand .card')).map(el => {
     const rankEl = el.querySelector('.rank');
@@ -297,7 +287,7 @@ async function resolveTurn0IfPresent(page, timeoutMs = 8000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     if (!(await isDisabled(page, "#drawPileBtn"))) return true;
-    await clickButtonWithText(page, "Decline");
+    await clickSelector(page, "#pileBtn"); // Turn 0: tap the pile to decline
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
