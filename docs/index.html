@@ -10,6 +10,14 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!-- Startup splash: shown for 2 seconds (CSS fades it out; app.ts removes it
+         and fills in the version). Skipped in tests (?test=1). -->
+    <div id="splash" class="splash" role="img" aria-label="Cascade Break">
+      <img src="splash.png" alt="" class="splash-img" />
+      <div class="splash-title">Cascade Break</div>
+      <div id="splashVersion" class="splash-version"></div>
+    </div>
+
     <div id="app">
       <header class="gbar">
         <button
@@ -43,6 +51,7 @@
           <button id="menuGoalBtn">Goal 1000</button>
           <button id="menuHelpBtn">Help</button>
           <button id="menuDebugBtn">Debug</button>
+          <div id="menuVersion" class="menu-version"></div>
         </nav>
       </header>
 
