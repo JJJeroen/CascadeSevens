@@ -314,12 +314,9 @@ function renderBanner() {
     if (r.ended) {
         modalRoot.hidden = false;
         const rs = r.roundScores;
-        const title = r.roundWinner === 0
-            ? `You won round ${g.roundNumber}!`
-            : r.roundWinner === 1
-                ? `The AI won round ${g.roundNumber}`
-                : `Round ${g.roundNumber} over (closed pile ran out)`;
-        fillDialog(modalBox, title, `You scored ${rs[0]}   They scored ${rs[1]}`, [
+        // Plain recap rather than "You won": the player who goes out is not
+        // always the one who scores more this round (DESIGN.md 2.8).
+        fillDialog(modalBox, "Round ended!", `Your score this round: ${rs[0]}\nTheir score this round: ${rs[1]}\n\nTotal score — you: ${g.scores[0]}, AI: ${g.scores[1]}`, [
             { label: `Round ${g.roundNumber + 1}`, onClick: nextRound },
             { label: "New game", onClick: newGame, secondary: true },
         ], () => {
