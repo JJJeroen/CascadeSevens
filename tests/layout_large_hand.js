@@ -494,9 +494,6 @@ async function testTurn0(page, vp) {
   if (!/tap the open card/i.test((await bal()) ?? ""))
     fail(`${tag}: tapping the open card again should cancel the swap`);
   // take it and place a hand card -> the offer is resolved (swap done)
-  const before = await q(
-    `document.querySelector("#openRow .card .rank").textContent + document.querySelector("#openRow .card .suit").textContent`,
-  );
   await q(`document.querySelector("#openRow .card").click()`);
   await q(`document.querySelector("#hand .card").click()`);
   const after = await q(
@@ -504,7 +501,6 @@ async function testTurn0(page, vp) {
   );
   if (after === 0)
     fail(`${tag}: swapping a hand card in should resolve the human's offer`);
-  void before;
   // fresh game, decline by tapping the pile
   mine = false;
   for (let i = 0; i < 30 && !mine; i++) {

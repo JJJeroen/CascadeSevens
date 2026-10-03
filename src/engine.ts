@@ -266,7 +266,7 @@ function drawFromClosedPile(game: Game): void {
   if (!canDrawFromClosedPile(game)) {
     throw new Error(
       r.part !== 1
-        ? "Not in Part 1."
+        ? "You can only do that while drawing."
         : "Already took from the cascade this turn — the pile is no longer available.",
     );
   }
@@ -284,7 +284,9 @@ function drawFromClosedPile(game: Game): void {
 function drawFromOpenRow(game: Game, cardId: string): void {
   const r = game.round as Round;
   if (!canDrawFromRow(game))
-    throw new Error("Not in Part 1, or the cascade is empty.");
+    throw new Error(
+      "You can only take from the cascade while drawing, and only if it has cards.",
+    );
   const idx = r.openRow.findIndex((c) => c.id === cardId);
   if (idx === -1) throw new Error("Card not in the cascade.");
   const taken = r.openRow.splice(idx); // this card + everything after it
@@ -477,7 +479,7 @@ function resolveGroup(cards: Card[]): ResolveResult {
   if (reals.length === 0) {
     return {
       ok: false,
-      error: "A meld needs at least one real (non-joker) card.",
+      error: "A series needs at least one real (non-joker) card.",
     };
   }
 
@@ -503,7 +505,7 @@ function resolveGroup(cards: Card[]): ResolveResult {
 
 function autoResolveMeld(hand: Card[], cardIds: string[]): ResolveResult {
   if (cardIds.length < 3)
-    return { ok: false, error: "A meld needs at least 3 cards." };
+    return { ok: false, error: "A series needs at least 3 cards." };
   const cards = cardIds.map((id) => hand.find((h) => h.id === id));
   if (cards.some((c) => !c))
     return { ok: false, error: "Selected card not in hand." };
@@ -522,7 +524,7 @@ function validateNewMeldSelection(
   slots: SlotSpec[],
 ): MeldSelectionCheck {
   if (slots.length < 3)
-    return { ok: false, error: "A meld needs at least 3 cards." };
+    return { ok: false, error: "A series needs at least 3 cards." };
   const cards: AssignedCard[] = slots.map((s) => {
     const c = hand.find((h) => h.id === s.cardId);
     if (!c) throw new Error("Selected card not in hand.");
@@ -620,7 +622,10 @@ function hasComeOut(game: Game): boolean {
 
 function layNewMeld(game: Game, cardSelections: SlotSpec[]): Meld {
   const r = game.round as Round;
-  if (r.part !== 2) throw new Error("Not in Part 2.");
+  if (r.part !== 2)
+    throw new Error(
+      "You can only do that after drawing, during your own turn.",
+    );
   if (r.rearrange)
     throw new Error("Finish or cancel the current rearrange session first.");
   const hand = r.hands[r.current];
@@ -727,7 +732,7 @@ function assertLeavesHandUsable(
   const remaining = hand.length - cardsBeingRemovedCount;
   if (obligationsAfterCount > 0 && remaining <= obligationsAfterCount) {
     throw new Error(
-      `This would leave you unable to still meld the ${obligationsAfterCount} card(s) you owe this turn without emptying your hand — resolve an outstanding obligation first, or choose an action that doesn't shrink your hand this far.`,
+      `This would leave you unable to lay the ${obligationsAfterCount} card(s) you owe this turn without emptying your hand — lay the cards you owe first, or choose an action that doesn't shrink your hand this far.`,
     );
   }
   if (obligationsAfterCount === 0 && remaining <= 0) {
@@ -744,16 +749,19 @@ function addToMeld(
   wildAs?: WildAs,
 ): void {
   const r = game.round as Round;
-  if (r.part !== 2) throw new Error("Not in Part 2.");
+  if (r.part !== 2)
+    throw new Error(
+      "You can only do that after drawing, during your own turn.",
+    );
   if (r.rearrange)
     throw new Error("Finish or cancel the current rearrange session first.");
   if (!r.comeOut[r.current])
-    throw new Error("Must come out before adding to any meld.");
+    throw new Error("You must come out before adding to a series.");
   const hand = r.hands[r.current];
   const ci = findCard(hand, cardId);
   if (ci === -1) throw new Error("Card not in hand.");
   const meld = r.tableau.find((m) => m.id === meldId);
-  if (!meld) throw new Error("Meld not found.");
+  if (!meld) throw new Error("Series not found.");
   const card = hand[ci];
   const meldOnlyObligationsAfter = r.pendingObligations.filter(
     (id) => id !== card.id && id !== r.rowObligationCardId,
@@ -761,7 +769,7 @@ function addToMeld(
   assertLeavesHandUsable(hand, 1, meldOnlyObligationsAfter);
 
   if (card.rank === "JOKER" && !wildAs) {
-    throw new Error("A joker needs a rank assignment to be added to a meld.");
+    throw new Error("A joker needs a rank assignment to be added to a series.");
   }
 
   if (meld.type === "set") {
@@ -912,17 +920,20 @@ function swapJoker(
   replacementCardId: string,
 ): void {
   const r = game.round as Round;
-  if (r.part !== 2) throw new Error("Not in Part 2.");
+  if (r.part !== 2)
+    throw new Error(
+      "You can only do that after drawing, during your own turn.",
+    );
   if (r.rearrange)
     throw new Error("Finish or cancel the current rearrange session first.");
   if (!r.comeOut[r.current])
     throw new Error("Must come out before swapping a joker.");
   const meld = r.tableau.find((m) => m.id === meldId);
-  if (!meld) throw new Error("Meld not found.");
+  if (!meld) throw new Error("Series not found.");
   const slotIdx = meld.slots.findIndex(
     (s) => s.card.id === jokerCardId && s.card.rank === "JOKER",
   );
-  if (slotIdx === -1) throw new Error("Joker not found in that meld.");
+  if (slotIdx === -1) throw new Error("Joker not found in that series.");
   const slot = meld.slots[slotIdx];
   const hand = r.hands[r.current];
   const ci = findCard(hand, replacementCardId);
@@ -945,7 +956,7 @@ function swapJoker(
   if (meld.type === "set") {
     if (replacement.rank !== wildAs.rank) {
       throw new Error(
-        `This joker stands in for a ${wildAs.rank} — swap requires the exact rank. To add your card to this meld instead without touching the joker, use "Add selected card to targeted meld."`,
+        `This joker stands in for a ${wildAs.rank} — swap requires the exact rank. To add your card to this series instead without touching the joker, use "Add to series."`,
       );
     }
   } else {
@@ -954,7 +965,7 @@ function swapJoker(
       replacement.suit !== meldSuit(meld)
     ) {
       throw new Error(
-        `This joker stands in for the ${wildAs.rank} of this run's suit — swap requires that exact card. If your card would extend the run instead, use "Add selected card to targeted meld."`,
+        `This joker stands in for the ${wildAs.rank} of this run's suit — swap requires that exact card. If your card would extend the run instead, use "Add to series."`,
       );
     }
   }
@@ -997,13 +1008,16 @@ function pullFromMeld(
   cardIds: string | string[],
 ): void {
   const r = game.round as Round;
-  if (r.part !== 2) throw new Error("Not in Part 2.");
+  if (r.part !== 2)
+    throw new Error(
+      "You can only do that after drawing, during your own turn.",
+    );
   if (r.rearrange)
     throw new Error("Finish or cancel the current rearrange session first.");
   if (!r.comeOut[r.current])
-    throw new Error("Must come out before rearranging the tableau.");
+    throw new Error("You must come out before rearranging the table.");
   const meld = r.tableau.find((m) => m.id === meldId);
-  if (!meld) throw new Error("Meld not found.");
+  if (!meld) throw new Error("Series not found.");
   const ids = Array.isArray(cardIds) ? cardIds : [cardIds];
   if (ids.length === 0) throw new Error("No cards specified to pull.");
   const pulled: MeldSlot[] = [];
@@ -1013,7 +1027,7 @@ function pullFromMeld(
     else remaining.push(slot);
   }
   if (pulled.length !== ids.length)
-    throw new Error("Some cards were not found in that meld.");
+    throw new Error("Some cards were not found in that series.");
   // Confirmed against the designer (2026-07-27): a player may only pull
   // cards THEY themselves currently own (i.e. placed most recently, per
   // §2.8's ownership-follows-placement rule) — not cards credited to the
@@ -1031,7 +1045,7 @@ function pullFromMeld(
         : { ok: false as const };
     if (!check.ok) {
       throw new Error(
-        "Pulling those cards would leave an invalid meld behind (fewer than 3 cards, or a broken run).",
+        "Pulling those cards would leave an invalid series behind (fewer than 3 cards, or a broken run).",
       );
     }
   }
@@ -1197,7 +1211,7 @@ function commitRearrange(game: Game): CommitRearrangeResult {
       problems.push({
         groupId: gid,
         cardIds,
-        error: "A meld needs at least 3 cards.",
+        error: "A series needs at least 3 cards.",
       });
       continue;
     }
@@ -1221,7 +1235,7 @@ function commitRearrange(game: Game): CommitRearrangeResult {
       const c = rr.cardById[cardId];
       problems.push({
         cardId,
-        error: `${c.rank}${c.suit || ""} belongs to the other player and can't be left in your hand — it must stay in some meld.`,
+        error: `${c.rank}${c.suit || ""} belongs to the other player and can't be left in your hand — it must stay in some series.`,
       });
     }
   }
@@ -1230,7 +1244,7 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   if (problems.length === 0 && newHandIds.length === 0) {
     problems.push({
       error:
-        "You must keep at least one card in hand — you cannot place your entire hand into the tableau.",
+        "You must keep at least one card in hand — you cannot place your entire hand onto the table.",
     });
   }
 
@@ -1296,12 +1310,15 @@ function comeOutShortfall(game: Game): number {
 // obligation / pickup-undo state from just before the first of them.
 function takeBackUnqualifiedMelds(game: Game): void {
   const r = game.round as Round;
-  if (r.part !== 2) throw new Error("Not in Part 2.");
+  if (r.part !== 2)
+    throw new Error(
+      "You can only do that after drawing, during your own turn.",
+    );
   if (r.rearrange)
     throw new Error("Finish or cancel the current rearrange session first.");
   const attempt = r.comeOutAttempt;
   if (r.comeOut[r.current] || !attempt || attempt.meldIds.length === 0)
-    throw new Error("There are no under-40 melds to take back.");
+    throw new Error("There are no under-40 series to take back.");
   const hand = r.hands[r.current];
   let cards = 0;
   r.tableau = r.tableau.filter((meld) => {
@@ -1325,7 +1342,10 @@ function takeBackUnqualifiedMelds(game: Game): void {
 
 function discard(game: Game, cardId: string): void {
   const r = game.round as Round;
-  if (r.part !== 2) throw new Error("Not in Part 2.");
+  if (r.part !== 2)
+    throw new Error(
+      "You can only do that after drawing, during your own turn.",
+    );
   if (r.rearrange)
     throw new Error("Finish or cancel the current rearrange session first.");
   const shortfall = comeOutShortfall(game);
@@ -1346,11 +1366,11 @@ function discard(game: Game, cardId: string): void {
     (id) => id !== cardId,
   );
   if (otherObligationsRemain)
-    throw new Error("Outstanding cards must be melded first.");
+    throw new Error("Cards you owe must be laid in a series first.");
   const isObligated = r.pendingObligations.includes(cardId);
   if (isObligated && cardId !== r.rowObligationCardId) {
     throw new Error(
-      "This card was reclaimed from a joker swap and must be melded, not discarded, this turn.",
+      "This card was reclaimed from a joker swap and must be laid in a series, not discarded, this turn.",
     );
   }
 

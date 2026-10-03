@@ -224,7 +224,7 @@ function render() {
     else {
         $("rearrangeHandPoolWrap").hidden = true;
         $("tableauHint").textContent =
-            "(shared — click a meld's border to target it for Add/Swap/Pull-entire; click a card inside it to pull just that card, once you've come out)";
+            "(shared — tap a series to target it for Add/Swap/Pull; drag one of your own cards out to pull it back, once you've come out)";
         renderTableau();
     }
     fitMeldOverlaps();
@@ -395,8 +395,8 @@ function renderOpenRow() {
                         };
                         if (!CascadeAI.canResolvePickup(hand, scoopCards, card.id)) {
                             const scoop = scoopCards.length;
-                            showDialog("Take this card anyway?", `Taking this card would also scoop ${scoop} card(s), and ${cardText(card)} must be melded this turn — ` +
-                                `but no legal meld for it seems possible with your current hand.`, [
+                            showDialog("Take this card anyway?", `Taking this card would also take ${scoop} card(s), and ${cardText(card)} must go in a series this turn (or be discarded back) — ` +
+                                `but no series seems possible for it with your current hand.`, [
                                 { label: "Cancel", secondary: true },
                                 { label: "Take it anyway", onClick: take },
                             ]);
@@ -473,7 +473,7 @@ function renderTableau() {
                     const suitHint = meld.type === "run"
                         ? SUIT_SYMBOL[CascadeEngine.meldSuit(meld)]
                         : "";
-                    showError(`This joker stands in for ${slot.wildAs?.rank}${suitHint} — your selected ${replacement ? cardText(replacement) : "card"} doesn't match, so it can't be swapped in. If it would extend or fit this meld instead, target the meld's border and use "Add selected card to targeted meld."`);
+                    showError(`This joker stands in for ${slot.wildAs?.rank}${suitHint} — your selected ${replacement ? cardText(replacement) : "card"} doesn't match, so it can't be swapped in. If it would extend or fit this series instead, tap the series and use "Add to series."`);
                     return;
                 }
                 targetedMeldId = meld.id;
@@ -507,8 +507,8 @@ function renderRearrangeView() {
         ? cardText(rearrange.cardById[r.rowObligationCardId])
         : null;
     $("tableauHint").textContent = stillOwed
-        ? `(drafting — nothing is final until you commit; click a card, then click a group -- or any card already in it -- to move it there — you still owe ${stillOwed} from the cascade this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
-        : "(drafting — nothing is final until you commit; click a card, then click a group -- or any card already in it -- to move it there)";
+        ? `(drafting — nothing is final until you commit; tap a card, then tap a group -- or any card already in it -- to move it there — you still owe ${stillOwed} from the cascade this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
+        : "(drafting — nothing is final until you commit; tap a card, then tap a group -- or any card already in it -- to move it there)";
     const el = $("tableau");
     el.innerHTML = "";
     const state = CascadeEngine.rearrangeState(g);
@@ -624,7 +624,7 @@ function renderHand() {
                     // melding controls only unlock after "Done drawing". Say so,
                     // instead of silently ignoring the tap (it looked like the game
                     // wouldn't let a meld be laid).
-                    showInfo('Tap "Done drawing" first, then lay your meld.');
+                    showInfo('Tap "Done drawing" first, then lay a series.');
                     return;
                 }
                 if (r.part !== 2 || r.current !== 0)
@@ -879,7 +879,7 @@ function resolveDrop(ds) {
         if (target?.kind === "meld" && target.meldId === ds.source.meldId)
             return; // dropped back in place
         if (!ds.source.ownsCard) {
-            showError("You don't have any cards of your own in this meld to pull.");
+            showError("You don't have any cards of your own in this series to pull.");
             return;
         }
         try {
@@ -904,7 +904,7 @@ function resolveDrop(ds) {
         if (target)
             showError(r.part === 1 && r.current === 0 && CascadeEngine.canFinishDrawing(g)
                 ? 'Tap "Done drawing" first, then you can play cards.'
-                : "You can only play a card during Part 2 of your own turn.");
+                : "You can only play cards after drawing, during your own turn.");
         return; // no target and can't play -> just snap back, no message needed
     }
     // Dragging one card out of an active multi-card selection: where it
@@ -918,7 +918,7 @@ function resolveDrop(ds) {
             const ids = [...selectedHandCardIds];
             const resolved = CascadeEngine.autoResolveMeld(r.hands[0], ids);
             if (!resolved.ok) {
-                showError(resolved.error ?? "Not a valid meld.");
+                showError(resolved.error ?? "Not a valid series.");
                 return;
             }
             try {
@@ -936,7 +936,7 @@ function resolveDrop(ds) {
             const ids = [...selectedHandCardIds];
             const result = addMultipleToMeld(g, target.meldId, ids);
             if (result.addedCount === 0) {
-                showError("No legal spot for any of the selected cards in this meld.");
+                showError("No legal spot for any of the selected cards in this series.");
                 return;
             }
             const stillRemaining = new Set(result.remaining);
@@ -949,7 +949,7 @@ function resolveDrop(ds) {
         }
     }
     if (target?.kind === "tableau-empty") {
-        showError('Select 3+ cards and use "Lay new meld" to start a new meld — dragging one card only adds to an existing meld.');
+        showError('Select 3+ cards and tap "Lay series" to start a new series — dragging one card only adds to an existing series.');
         return;
     }
     if (target?.kind === "open-row") {
@@ -975,7 +975,7 @@ function resolveDrop(ds) {
             else {
                 const resolved = CascadeEngine.autoResolveAddToMeld(meld, card);
                 if (!resolved) {
-                    showError("No legal spot for that card in this meld.");
+                    showError("No legal spot for that card in this series.");
                     return;
                 }
                 CascadeEngine.addToMeld(g, meld.id, card.id, resolved.wildAs);
@@ -1088,8 +1088,8 @@ function renderControls() {
             : r.part === "turn0"
                 ? "Turn 0 — starter exchange"
                 : rearranging
-                    ? `Player ${r.current + 1}'s turn — rearranging the tableau (draft only, nothing final until committed)`
-                    : `Player ${r.current + 1}'s turn — Part ${r.part}${r.current === 0 ? comeOutProgress : ""}`;
+                    ? `${r.current === 0 ? "Your" : "The AI's"} turn — rearranging the table (draft only, nothing final until committed)`
+                    : `${r.current === 0 ? "Your" : "The AI's"} turn — ${r.part === 1 ? "draw" : r.part === 2 ? "lay series, then discard" : "discard"}${r.current === 0 ? comeOutProgress : ""}`;
     const obligEl = $("obligationLabel");
     if (isHumanTurn && !rearranging && r.pendingObligations.length > 0) {
         obligEl.hidden = false;
@@ -1101,8 +1101,8 @@ function renderControls() {
             const c = hand.find((h) => h.id === id);
             const label = c ? cardText(c) : id;
             return id === r.rowObligationCardId
-                ? `${label} (meld it or discard it back)`
-                : `${label} (must meld)`;
+                ? `${label} (lay it in a series or discard it back)`
+                : `${label} (must lay it in a series)`;
         });
         obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : ""}`;
     }
@@ -1123,7 +1123,7 @@ function renderControls() {
     const targetEl = $("targetIndicator");
     if (isHumanTurn && !rearranging && r.part === 2 && targetedMeld) {
         targetEl.hidden = false;
-        targetEl.textContent = `Targeted meld: ${targetedMeld.slots.map((s) => cardText(s.card)).join(", ")}`;
+        targetEl.textContent = `Targeted series: ${targetedMeld.slots.map((s) => cardText(s.card)).join(", ")}`;
     }
     else {
         targetEl.hidden = true;
@@ -1260,7 +1260,7 @@ $("layMeldBtn").addEventListener("click", () => {
     // asking the player to pre-guess a specific rank.
     const resolved = CascadeEngine.autoResolveMeld(hand, ids);
     if (!resolved.ok)
-        return showError(resolved.error ?? "Not a valid meld.");
+        return showError(resolved.error ?? "Not a valid series.");
     try {
         CascadeEngine.layNewMeld(game, resolved.slots);
         selectedHandCardIds.clear();
@@ -1278,7 +1278,7 @@ $("addToMeldBtn").addEventListener("click", () => {
     const ids = [...selectedHandCardIds];
     const result = addMultipleToMeld(game, targetedMeldId, ids);
     if (result.addedCount === 0) {
-        showError("No legal spot for any of the selected card(s) in this meld.");
+        showError("No legal spot for any of the selected card(s) in this series.");
         return;
     }
     const stillRemaining = new Set(result.remaining);
@@ -1292,7 +1292,7 @@ $("swapJokerBtn").addEventListener("click", () => {
     const meld = game.round?.tableau.find((m) => m.id === targetedMeldId);
     const jokerSlot = meld && meld.slots.find((s) => s.card.rank === "JOKER");
     if (!jokerSlot)
-        return showError("Targeted meld has no joker.");
+        return showError("Targeted series has no joker.");
     const cardId = [...selectedHandCardIds][0];
     try {
         CascadeEngine.swapJoker(game, meld.id, jokerSlot.card.id, cardId);
@@ -1306,7 +1306,7 @@ $("swapJokerBtn").addEventListener("click", () => {
 $("pullMeldBtn").addEventListener("click", () => {
     const meld = game.round?.tableau.find((m) => m.id === targetedMeldId);
     if (!meld)
-        return showError("Target a meld first.");
+        return showError("Tap a series first.");
     // Only pull cards this player actually owns — a meld can be a mix of
     // both players' cards (either can add to any meld), but pulling is
     // restricted to what you placed yourself.
@@ -1314,7 +1314,7 @@ $("pullMeldBtn").addEventListener("click", () => {
         .filter((s) => s.ownerId === 0)
         .map((s) => s.card.id);
     if (ownCardIds.length === 0)
-        return showError("You don't have any cards of your own in this meld to pull.");
+        return showError("You don't have any cards of your own in this series to pull.");
     try {
         CascadeEngine.pullFromMeld(game, meld.id, ownCardIds);
         targetedMeldId = null;
@@ -1508,8 +1508,8 @@ function updateBalloon(g, r, isHumanTurn, rearranging, hand) {
             const c = hand.find((h) => h.id === id);
             const label = c ? cardText(c) : id;
             return id === r.rowObligationCardId
-                ? `meld ${label} or discard it back`
-                : `meld ${label}`;
+                ? `lay ${label} in a series or discard it back`
+                : `lay ${label} in a series`;
         });
         showBalloon(`obligation:${r.pendingObligations.join(",")}`, `You must ${parts.join(" and ")}`);
         return;
@@ -1522,7 +1522,7 @@ function updateBalloon(g, r, isHumanTurn, rearranging, hand) {
         return;
     }
     if (CascadeEngine.canFinishDrawing(g)) {
-        showBalloon("finish", 'Done drawing? Tap "Done drawing" to start melding.');
+        showBalloon("finish", 'Done drawing? Tap "Done drawing" to start laying series.');
         return;
     }
     if (r.part === 1) {
