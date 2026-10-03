@@ -742,6 +742,35 @@ async function testOwnerColors(page, vp) {
     fail(`${tag}: the AI's score should be blue, got ${s.score2}`);
 }
 
+// A joker you owe after a swap: "You must use this joker in this turn" (not
+// "You must lay JOKER in a series").
+async function testJokerObligation(page, vp) {
+  const tag = `${vp.name} joker-obligation`;
+  const q = (js) => page.evalJs(js);
+  await q(`document.querySelector("#newGameBtn").click()`);
+  await q(`(() => {
+    const g = window.__cascadeTest.getGame(), r = g.round;
+    r.part = 2; r.current = 0; r.ended = false; r.rearrange = null;
+    r.comeOut[0] = true; r.comeOutAccum = [0, 0]; r.comeOutAttempt = null;
+    r.rowObligationCardId = null; r.pendingObligations = ["JOKER1"];
+    r.hands[0] = [{ id: "JOKER1", rank: "JOKER", suit: null }, { id: "2C", rank: "2", suit: "C" }, { id: "9S", rank: "9", suit: "S" }];
+    r.tableau = [];
+    window.__cascadeTest.render();
+  })()`);
+  const s = await q(`(() => ({
+    balloon: document.querySelector("#balloon").hidden ? null : document.querySelector("#balloonText").textContent,
+    label: document.querySelector("#obligationLabel").hidden ? null : document.querySelector("#obligationLabel").textContent,
+  }))()`);
+  if (s.balloon !== "You must use this joker in this turn")
+    fail(`${tag}: unexpected balloon ${JSON.stringify(s.balloon)}`);
+  if (
+    !s.label ||
+    !/Joker \(you must use it this turn\)/.test(s.label) ||
+    /JOKER/.test(s.label)
+  )
+    fail(`${tag}: unexpected status text ${JSON.stringify(s.label)}`);
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -766,6 +795,7 @@ async function main() {
       await testSub40Popup(page, vp);
       await testTurn0(page, vp);
       await testBlockedPullHint(page, vp);
+      await testJokerObligation(page, vp);
       await testRoundEnd(page, vp); // leaves the round marked ended...
       await testMovablePopup(page, vp); // ...which this one needs
     }
