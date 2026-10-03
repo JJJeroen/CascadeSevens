@@ -549,6 +549,81 @@ async function testLog(page, vp) {
   await q(`document.querySelector("#menuDebugBtn").click()`); // hide it again
 }
 
+// The round-end popup can be dragged out of the way, stays on screen, and
+// doesn't dim or block the table underneath (Tommer: "he can't see what
+// happened since the popup sits over it").
+async function testMovablePopup(page, vp) {
+  const tag = `${vp.name} movable-popup`;
+  const q = (js) => page.evalJs(js);
+  const rect = () =>
+    q(
+      `(() => { const r = document.querySelector("#modalBox").getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; })()`,
+    );
+  const info = await q(`(() => {
+    const root = getComputedStyle(document.querySelector("#modalRoot"));
+    const outside = document.elementFromPoint(5, window.innerHeight - 5);
+    return { pe: root.pointerEvents, bg: root.backgroundColor,
+             open: !document.querySelector("#modalRoot").hidden,
+             tableReachable: !!outside && !outside.closest("#modalRoot") };
+  })()`);
+  if (!info.open) return fail(`${tag}: the round-end popup should be open`);
+  if (info.pe !== "none")
+    fail(
+      `${tag}: the popup backdrop must not block the page (pointer-events ${info.pe})`,
+    );
+  if (!/rgba\(0, 0, 0, 0\)|transparent/.test(info.bg))
+    fail(`${tag}: the popup backdrop should not dim the table (${info.bg})`);
+  if (!info.tableReachable)
+    fail(`${tag}: the table outside the popup should be reachable`);
+
+  const send = (type, x, y) =>
+    page.send("Input.dispatchMouseEvent", {
+      type,
+      x,
+      y,
+      button: "left",
+      buttons: type === "mouseReleased" ? 0 : 1,
+      clickCount: 1,
+    });
+  const drag = async (from, to) => {
+    await send("mouseMoved", from.x, from.y);
+    await send("mousePressed", from.x, from.y);
+    for (let i = 1; i <= 6; i++)
+      await send(
+        "mouseMoved",
+        from.x + ((to.x - from.x) * i) / 6,
+        from.y + ((to.y - from.y) * i) / 6,
+      );
+    await send("mouseReleased", to.x, to.y);
+  };
+  const before = await rect();
+  const grab = { x: before.l + 14, y: before.t + 10 }; // the handle / padding, not a button
+  await drag(grab, { x: grab.x + 10, y: grab.y - 30 }); // phones leave only ~16px of sideways room
+  const moved = await rect();
+  if (
+    Math.abs(moved.l - before.l - 10) > 2 ||
+    Math.abs(moved.t - before.t + 30) > 2
+  )
+    fail(
+      `${tag}: dragging by (10,-30) moved the popup by (${Math.round(moved.l - before.l)},${Math.round(moved.t - before.t)})`,
+    );
+
+  // yank it far off the screen: it must stay fully visible
+  const g2 = { x: moved.l + 14, y: moved.t + 10 };
+  await drag(g2, { x: g2.x - 3000, y: g2.y - 3000 });
+  const far = await rect();
+  const vw = await q(`window.innerWidth`);
+  const vh = await q(`window.innerHeight`);
+  if (far.r > vw + 1 || far.b > vh + 1 || far.l < -1 || far.t < -1)
+    fail(
+      `${tag}: the popup left the screen: ${JSON.stringify(far)} in ${vw}x${vh}`,
+    );
+  if (far.t >= moved.t)
+    fail(
+      `${tag}: dragging far up should have moved it up (${moved.t} -> ${far.t})`,
+    );
+}
+
 async function main() {
   const browserBin = findBrowser();
   if (!browserBin) {
@@ -571,7 +646,8 @@ async function main() {
       await testLog(page, vp);
       await testSub40Popup(page, vp);
       await testTurn0(page, vp);
-      await testRoundEnd(page, vp); // last: it leaves the round marked ended
+      await testRoundEnd(page, vp); // leaves the round marked ended...
+      await testMovablePopup(page, vp); // ...which this one needs
     }
   } finally {
     if (page) {

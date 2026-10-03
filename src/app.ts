@@ -84,6 +84,67 @@ function errMsg(e: unknown): string {
 // confirmations, round/game end): title, body text, a row of buttons. Replaces
 // the browser's native alert()/confirm(), which look different on every
 // platform (and in the Capacitor WebView) and block the page.
+// Popups can be dragged out of the way (by their top handle or any empty part
+// of the box): the round-end popup used to sit on top of the very table the
+// player wanted to look at to see what had just happened.
+const dialogOffsets = new WeakMap<HTMLElement, { x: number; y: number }>();
+
+function resetDialogPosition(box: HTMLElement): void {
+  dialogOffsets.set(box, { x: 0, y: 0 });
+  box.style.transform = "";
+}
+
+function makeDraggable(box: HTMLElement): void {
+  resetDialogPosition(box);
+  let drag: {
+    id: number;
+    startX: number;
+    startY: number;
+    from: { x: number; y: number };
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  } | null = null;
+  box.addEventListener("pointerdown", (ev: PointerEvent) => {
+    if (!ev.isPrimary || (ev.target as Element).closest("button")) return;
+    const off = dialogOffsets.get(box) as { x: number; y: number };
+    const r = box.getBoundingClientRect();
+    // Where the box sits with no offset, so the move can be kept on screen.
+    const baseLeft = r.left - off.x;
+    const baseTop = r.top - off.y;
+    drag = {
+      id: ev.pointerId,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      from: { ...off },
+      minX: -baseLeft,
+      maxX: window.innerWidth - baseLeft - r.width,
+      minY: -baseTop,
+      maxY: window.innerHeight - baseTop - r.height,
+    };
+    box.setPointerCapture(ev.pointerId);
+  });
+  box.addEventListener("pointermove", (ev: PointerEvent) => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const x = Math.min(
+      drag.maxX,
+      Math.max(drag.minX, drag.from.x + ev.clientX - drag.startX),
+    );
+    const y = Math.min(
+      drag.maxY,
+      Math.max(drag.minY, drag.from.y + ev.clientY - drag.startY),
+    );
+    dialogOffsets.set(box, { x, y });
+    box.style.transform = `translate(${x}px, ${y}px)`;
+  });
+  const end = (ev: PointerEvent): void => {
+    if (drag && ev.pointerId === drag.id) drag = null;
+  };
+  box.addEventListener("pointerup", end);
+  box.addEventListener("pointercancel", end);
+}
+
 interface DialogAction {
   label: string;
   onClick?: () => void;
@@ -136,6 +197,7 @@ function showDialog(
   actions: DialogAction[] = [{ label: "OK" }],
 ): void {
   fillDialog($("dialogBox"), title, body, actions, closeDialog);
+  resetDialogPosition($("dialogBox"));
   $("dialogRoot").hidden = false;
   $("dialogBox").querySelector("button")?.focus();
 }
@@ -243,6 +305,7 @@ function newGame(): void {
   turn0UiMode = "idle";
   handDisplayOrder = [];
   hideBalloon(); // don't carry a leftover note into the new game
+  resetDialogPosition($("modalBox"));
   render();
   scheduleIfAITurn();
 }
@@ -254,6 +317,7 @@ function nextRound(): void {
   turn0UiMode = "idle";
   handDisplayOrder = [];
   hideBalloon();
+  resetDialogPosition($("modalBox"));
   render();
   scheduleIfAITurn();
 }
@@ -1934,5 +1998,7 @@ if (new URLSearchParams(location.search).has("test")) {
 }
 void showVersion();
 
+makeDraggable($("modalBox"));
+makeDraggable($("dialogBox"));
 $("debugPanel").hidden = !debugOn();
 newGame();
