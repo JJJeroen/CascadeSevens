@@ -132,7 +132,8 @@ function startRound(game: Game, rng: () => number = Math.random): Game {
     lastDraw: null, // undoable until any other Part 2 action happens
     rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
     rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
-    comeOutAccum: [0, 0], // per-player running total toward the 40-point come-out bar (§2.4) — persists across turns until crossed, confirmed against the designer 2026-07-26
+    comeOutAccum: [0, 0], // points of new melds laid THIS turn toward the 40-point come-out bar (§2.4, revised 2026-10-03: single turn, no carry-over)
+    comeOutAttempt: null, // snapshot for taking this turn's under-40 melds back
     comeOutMetThisTurn: false,
     log: [],
     ended: false,
@@ -635,6 +636,14 @@ function layNewMeld(game: Game, cardSelections: SlotSpec[]): Meld {
   const result = validateNewMeldSelection(hand, cardSelections);
   if (!result.ok) throw new Error(result.error);
 
+  if (!r.comeOut[r.current] && !r.comeOutAttempt) {
+    r.comeOutAttempt = {
+      meldIds: [],
+      pendingObligations: [...r.pendingObligations],
+      rowObligationCardId: r.rowObligationCardId,
+      lastDraw: r.lastDraw,
+    };
+  }
   const slots: MeldSlot[] = cardSelections.map((s) => {
     const ci = findCard(hand, s.cardId);
     const [card] = hand.splice(ci, 1);
@@ -672,8 +681,10 @@ function layNewMeld(game: Game, cardSelections: SlotSpec[]): Meld {
   const value = meldValueFromSlots(slots);
   if (!r.comeOut[r.current]) {
     r.comeOutAccum[r.current] += value;
+    r.comeOutAttempt?.meldIds.push(meld.id);
     if (r.comeOutAccum[r.current] >= 40) {
       r.comeOut[r.current] = true;
+      r.comeOutAttempt = null; // out for good: nothing left to take back
       logMsg(game, `Player ${r.current + 1} has come out!`);
     }
   }
@@ -1270,11 +1281,58 @@ function canProceedToDiscard(game: Game): boolean {
   );
 }
 
+// §2.4 (revised 2026-10-03): the 40 points to come out must be laid within a
+// single turn. Returns how many more points the current player needs if they
+// have under-40 melds on the table this turn (and so may not end the turn
+// yet), else 0. The UI uses it to ask "lay more, or take them back?".
+function comeOutShortfall(game: Game): number {
+  const r = game.round as Round;
+  if (r.comeOut[r.current]) return 0;
+  const laid = r.comeOutAccum[r.current];
+  return laid > 0 ? 40 - laid : 0;
+}
+
+// Takes this turn's under-40 melds back into the hand and restores the
+// obligation / pickup-undo state from just before the first of them.
+function takeBackUnqualifiedMelds(game: Game): void {
+  const r = game.round as Round;
+  if (r.part !== 2) throw new Error("Not in Part 2.");
+  if (r.rearrange)
+    throw new Error("Finish or cancel the current rearrange session first.");
+  const attempt = r.comeOutAttempt;
+  if (r.comeOut[r.current] || !attempt || attempt.meldIds.length === 0)
+    throw new Error("There are no under-40 melds to take back.");
+  const hand = r.hands[r.current];
+  let cards = 0;
+  r.tableau = r.tableau.filter((meld) => {
+    if (!attempt.meldIds.includes(meld.id)) return true;
+    for (const slot of meld.slots) {
+      hand.push(slot.card);
+      cards++;
+    }
+    return false;
+  });
+  r.comeOutAccum[r.current] = 0;
+  r.pendingObligations = [...attempt.pendingObligations];
+  r.rowObligationCardId = attempt.rowObligationCardId;
+  r.lastDraw = attempt.lastDraw;
+  r.comeOutAttempt = null;
+  logMsg(
+    game,
+    `Player ${r.current + 1} took ${cards} card(s) back (under 40 points to come out).`,
+  );
+}
+
 function discard(game: Game, cardId: string): void {
   const r = game.round as Round;
   if (r.part !== 2) throw new Error("Not in Part 2.");
   if (r.rearrange)
     throw new Error("Finish or cancel the current rearrange session first.");
+  const shortfall = comeOutShortfall(game);
+  if (shortfall > 0)
+    throw new Error(
+      `You have to lay 40 points or more to come out (you have ${40 - shortfall}). Lay more, or take your cards back.`,
+    );
   const hand = r.hands[r.current];
   const ci = findCard(hand, cardId);
   if (ci === -1) throw new Error("Card not in hand.");
@@ -1316,6 +1374,7 @@ function advanceTurn(game: Game): void {
   r.part = 1;
   r.lastDraw = null;
   r.rowDrawsThisPart1 = 0;
+  r.comeOutAttempt = null;
 }
 
 // --- Round / game end ---------------------------------------------------
@@ -1450,6 +1509,8 @@ export const CascadeEngine = {
   cancelRearrange,
   commitRearrange,
   canProceedToDiscard,
+  comeOutShortfall,
+  takeBackUnqualifiedMelds,
   discard,
   orderedRankValue,
   solveRun,

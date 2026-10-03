@@ -953,15 +953,7 @@ function resolveDrop(ds) {
         return;
     }
     if (target?.kind === "open-row") {
-        try {
-            CascadeEngine.discard(g, card.id);
-            selectedHandCardIds.delete(card.id);
-            targetedMeldId = null;
-            afterHumanAction();
-        }
-        catch (e) {
-            showError(errMsg(e));
-        }
+        attemptDiscard(card.id);
         return;
     }
     if (target?.kind === "meld") {
@@ -1086,8 +1078,8 @@ function renderControls() {
     const comeOut = r.comeOut[0];
     const comeOutProgress = !comeOut
         ? r.comeOutAccum[0] > 0
-            ? ` (come-out progress: ${r.comeOutAccum[0]}/40, carries forward until you cross it)`
-            : " (not come out yet)"
+            ? ` (laid ${r.comeOutAccum[0]} of the 40 needed to come out; 40 or more in one turn)`
+            : " (not come out yet: lay 40 or more in one turn)"
         : "";
     $("turnLabel").textContent = g.gameOver
         ? "Game over"
@@ -1320,17 +1312,46 @@ $("pullMeldBtn").addEventListener("click", () => {
     }
 });
 $("discardBtn").addEventListener("click", () => {
-    const cardId = [...selectedHandCardIds][0];
+    attemptDiscard([...selectedHandCardIds][0]);
+});
+// Ending the turn. If the player has laid melds this turn that add up to under
+// 40 and hasn't come out, the turn can't end (§2.4, 2026-10-03): ask whether to
+// keep laying or take those melds back into the hand.
+function attemptDiscard(cardId) {
+    const g = game;
+    const shortfall = CascadeEngine.comeOutShortfall(g);
+    if (shortfall > 0) {
+        const laid = 40 - shortfall;
+        showDialog("You have to lay 40 or more", `The series you laid this turn are worth ${laid}. To come out you have to lay 40 points or more in one turn. Lay more, or take them back into your hand.`, [
+            { label: "Keep laying" },
+            {
+                label: "Take back",
+                secondary: true,
+                onClick: () => {
+                    try {
+                        CascadeEngine.takeBackUnqualifiedMelds(g);
+                        selectedHandCardIds.clear();
+                        targetedMeldId = null;
+                        afterHumanAction();
+                    }
+                    catch (e) {
+                        showError(errMsg(e));
+                    }
+                },
+            },
+        ]);
+        return;
+    }
     try {
-        CascadeEngine.discard(game, cardId);
-        selectedHandCardIds.clear();
+        CascadeEngine.discard(g, cardId);
+        selectedHandCardIds.delete(cardId);
         targetedMeldId = null;
         afterHumanAction();
     }
     catch (e) {
         showError(errMsg(e));
     }
-});
+}
 $("startRearrangeBtn").addEventListener("click", () => {
     try {
         CascadeEngine.startRearrange(game);
@@ -1494,28 +1515,15 @@ function setDebug(on) {
     $("debugPanel").hidden = !on;
     renderMenuLabels();
 }
-// The opponent's progress toward coming out (40 points of new melds, carried
-// across turns). Without it, a laid meld below 40 -- e.g. A-2-3 = 35 -- looks
-// like the AI is already "out" when it isn't.
+// Whether the opponent has come out (laid 40+ in a turn). Their progress
+// can't be seen between turns any more -- under 40 can't be left on the table
+// (§2.4, 2026-10-03) -- so only "out" is shown.
 function renderOppStatus() {
-    const g = game;
-    const r = g.round;
+    const r = game.round;
     const el = $("oppStatus");
-    if (!r || r.ended) {
-        el.hidden = true;
-        return;
-    }
-    if (r.comeOut[1]) {
+    el.hidden = !r || r.ended || !r.comeOut[1];
+    if (!el.hidden)
         el.textContent = "out";
-        el.hidden = false;
-    }
-    else if (r.comeOutAccum[1] > 0) {
-        el.textContent = `${r.comeOutAccum[1]}/40`;
-        el.hidden = false;
-    }
-    else {
-        el.hidden = true;
-    }
 }
 function renderMenuLabels() {
     const g = game;
