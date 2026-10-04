@@ -355,8 +355,14 @@ function scheduleIfAITurn(): void {
 
 function render(): void {
   if (!game) return;
-  $("scoreP1").textContent = String(CascadeEngine.liveScore(game, 0));
-  $("scoreP2").textContent = String(CascadeEngine.liveScore(game, 1));
+  // Saved total, plus what this round's melds on the table are worth so far.
+  ([0, 1] as const).forEach((i) => {
+    const pending = (game as Game).round?.ended
+      ? 0
+      : CascadeEngine.roundMeldPointsSoFar(game as Game, i);
+    $(i === 0 ? "scoreP1" : "scoreP2").textContent =
+      String((game as Game).scores[i]) + (pending > 0 ? ` (+${pending})` : "");
+  });
   $("roundNum").textContent = String(game.roundNumber);
   $("pileCount").textContent = String((game.round as Round).closedPile.length);
   $("currentSeed").textContent =
@@ -476,7 +482,7 @@ function renderBanner(): void {
     // always the one who scores more this round (DESIGN.md 2.8).
     fillDialog(
       modalBox,
-      "Round ended!",
+      r.endReason === "pile-empty" ? "Round ended, pile empty" : "Round ended!",
       `Your score this round: ${rs[0]}\nTheir score this round: ${rs[1]}`,
       [
         { label: `Round ${g.roundNumber + 1}`, onClick: nextRound },
@@ -527,6 +533,29 @@ function toggleTurn0Take(): void {
   render();
 }
 
+// Would the picked-up card be addable to a series already on the table?
+// Tried on a copy of the game so the real one is untouched.
+function canAddToTableAfterTake(g: Game, card: Card): boolean {
+  try {
+    const sim = structuredClone(g) as Game;
+    CascadeEngine.drawFromOpenRow(sim, card.id);
+    const simRound = sim.round as Round;
+    if (!simRound.comeOut[simRound.current]) return false;
+    return simRound.tableau.some((meld) => {
+      const res = CascadeEngine.autoResolveAddToMeld(meld, card);
+      if (!res) return false;
+      try {
+        CascadeEngine.addToMeld(sim, meld.id, card.id, res.wildAs);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
 function renderOpenRow(): void {
   const el = $("openRow");
   el.innerHTML = "";
@@ -561,12 +590,20 @@ function renderOpenRow(): void {
                     showError(errMsg(e));
                   }
                 };
-                if (!CascadeAI.canResolvePickup(hand, scoopCards, card.id)) {
-                  const scoop = scoopCards.length;
+                // Only worth a warning when the pickup drags extra cards
+                // along: a lone card can simply be discarded back. And the
+                // card may also go on the table (added to an existing
+                // series), not just into a new series from the hand.
+                const extra = scoopCards.length - 1;
+                if (
+                  extra >= 1 &&
+                  !CascadeAI.canResolvePickup(hand, scoopCards, card.id) &&
+                  !canAddToTableAfterTake(g, card)
+                ) {
                   showDialog(
                     "Take this card anyway?",
-                    `Taking this card would also take ${scoop} card(s), and ${cardText(card)} must go in a series this turn (or be discarded back) — ` +
-                      `but no series seems possible for it with your current hand.`,
+                    `Taking this card will also take ${extra} more ${extra === 1 ? "card" : "cards"}, and ${cardText(card)} must go on the table this turn (or be discarded back) — ` +
+                      `but it doesn't seem to fit a series from your hand or an existing series on the table.`,
                     [
                       { label: "Cancel", secondary: true },
                       { label: "Take it anyway", onClick: take },

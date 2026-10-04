@@ -326,6 +326,14 @@ async function testRoundEnd(page, vp) {
     fail(`${tag}: unexpected dialog ${JSON.stringify(d)}`);
   if (d.buttons.join() !== "Round 2,New game")
     fail(`${tag}: unexpected buttons ${JSON.stringify(d.buttons)}`);
+  // A round that ends because the pile ran empty says so in the title.
+  const t2 = await page.evalJs(`(() => {
+    window.__cascadeTest.getGame().round.endReason = "pile-empty";
+    window.__cascadeTest.render();
+    return document.querySelector("#modalRoot .dialog-title")?.textContent;
+  })()`);
+  if (t2 !== "Round ended, pile empty")
+    fail(`${tag}: pile-empty title was ${JSON.stringify(t2)}`);
 }
 
 // After taking from the open row the player must press "Done drawing"; make
