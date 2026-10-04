@@ -59,6 +59,12 @@ export interface LastDraw {
   takenCards: Card[];
   priorObligations: string[];
   priorRowObligationCardId: string | null;
+  // Part the turn was in when this take happened (a take after laying is
+  // made in Part 2), so undoing it puts the player back where they were.
+  partBefore: 1 | 2;
+  // The still-undoable take before this one (none once a meld was laid in
+  // between), so undo can step back through consecutive takes.
+  previous: LastDraw | null;
 }
 
 // Active draft-then-commit tableau rearrange session (§2.3). Keyed by
@@ -77,6 +83,9 @@ export interface ComeOutAttempt {
   pendingObligations: string[]; // state from just before the first one
   rowObligationCardId: string | null;
   lastDraw: LastDraw | null;
+  // Cascade takes made after the first of those melds (DESIGN.md decision
+  // 24); taking the melds back returns these cards to the cascade too.
+  laterTakes: LastDraw[];
 }
 
 export type RoundPart = "turn0" | 1 | 2 | 3;

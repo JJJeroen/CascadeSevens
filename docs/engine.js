@@ -212,9 +212,16 @@ function beginNormalRotation(game) {
 // obligation is superseded, not accumulated, once another row-take
 // happens. The player explicitly ends Part 1 via finishDrawing() once
 // they're done (only reachable after at least one draw).
+// Added 2026-10-04 (DESIGN.md decision 24, requested by Tommer): once a
+// player has taken from the cascade this turn they may keep taking after
+// laying series too (take, lay, take again). The pile stays locked.
 function canDrawFromRow(game) {
     const r = game.round;
-    return r.part === 1 && r.openRow.length > 0;
+    if (r.openRow.length === 0)
+        return false;
+    if (r.part === 1)
+        return true;
+    return r.part === 2 && r.rowDrawsThisPart1 > 0 && !r.rearrange;
 }
 function canDrawFromClosedPile(game) {
     const r = game.round;
@@ -240,7 +247,7 @@ function drawFromClosedPile(game) {
 function drawFromOpenRow(game, cardId) {
     const r = game.round;
     if (!canDrawFromRow(game))
-        throw new Error("You can only take from the cascade while drawing, and only if it has cards.");
+        throw new Error("You can only take from the cascade while drawing (or after a take this turn), and only if it has cards.");
     const idx = r.openRow.findIndex((c) => c.id === cardId);
     if (idx === -1)
         throw new Error("Card not in the cascade.");
@@ -249,16 +256,26 @@ function drawFromOpenRow(game, cardId) {
     const bottomCard = taken[0];
     const priorObligations = r.pendingObligations.slice();
     const priorRowObligationCardId = r.rowObligationCardId;
-    r.pendingObligations = [bottomCard.id]; // supersedes any earlier row-take's obligation this Part 1
+    // Supersedes any earlier take's obligation, but a joker-swap obligation
+    // (meld-only, possible once a take happens after laying) must survive.
+    r.pendingObligations = [
+        ...r.pendingObligations.filter((id) => id !== priorRowObligationCardId),
+        bottomCard.id,
+    ];
     r.rowObligationCardId = bottomCard.id;
     r.rowDrawsThisPart1 += 1;
+    const partBefore = r.part;
+    r.part = 2; // a take no longer needs a separate "Done drawing" step
     logMsg(game, `Player ${r.current + 1} took ${taken.length} card(s) from the cascade (must lay ${bottomCard.rank}${bottomCard.suit || ""} in a series or discard it back).`);
     r.lastDraw = {
         source: "row",
         takenCards: taken.slice(),
         priorObligations,
         priorRowObligationCardId,
+        partBefore,
+        previous: r.lastDraw,
     };
+    r.comeOutAttempt?.laterTakes.push(r.lastDraw);
 }
 // The deliberate step from Part 1 into Part 2, once the player is done
 // drawing (possible only after at least one open-row take — a closed-pile
@@ -269,6 +286,8 @@ function canFinishDrawing(game) {
 }
 function finishDrawing(game) {
     const r = game.round;
+    if (r.part === 2 && r.rowDrawsThisPart1 > 0)
+        return; // a take already moved us on
     if (!canFinishDrawing(game))
         throw new Error("Nothing to finish — draw first.");
     r.part = 2;
@@ -291,22 +310,33 @@ function undoDraw(game) {
     const r = game.round;
     if (!canUndoDraw(game))
         throw new Error("Nothing to undo.");
-    const { takenCards, priorObligations, priorRowObligationCardId } = r.lastDraw;
+    const draw = r.lastDraw;
+    returnTakeToRow(r, draw);
+    r.part = draw.partBefore; // reverts finishDrawing too, if it had already happened
+    r.lastDraw = draw.previous; // step back: the take before this one is undoable next
+    const later = r.comeOutAttempt?.laterTakes;
+    if (later) {
+        const i = later.indexOf(draw);
+        if (i !== -1)
+            later.splice(i, 1);
+    }
+    logMsg(game, `Player ${r.current + 1} undid taking from the cascade.`);
+}
+// Puts one take's cards back at the end of the cascade and restores the
+// obligation state from before it.
+function returnTakeToRow(r, draw) {
     const hand = r.hands[r.current];
-    for (const c of takenCards) {
+    for (const c of draw.takenCards) {
         if (findCard(hand, c.id) === -1)
             throw new Error("Cannot undo — hand has changed since the draw.");
     }
-    for (const c of takenCards) {
+    for (const c of draw.takenCards) {
         hand.splice(findCard(hand, c.id), 1);
     }
-    r.openRow.push(...takenCards);
-    r.pendingObligations = priorObligations;
-    r.rowObligationCardId = priorRowObligationCardId;
+    r.openRow.push(...draw.takenCards);
+    r.pendingObligations = draw.priorObligations;
+    r.rowObligationCardId = draw.priorRowObligationCardId;
     r.rowDrawsThisPart1 -= 1;
-    r.part = 1; // reverts finishDrawing too, if it had already happened
-    r.lastDraw = null;
-    logMsg(game, `Player ${r.current + 1} undid taking from the cascade.`);
 }
 // --- Meld validation ------------------------------------------------------
 function orderedRankValue(rank, aceHigh) {
@@ -574,6 +604,7 @@ function layNewMeld(game, cardSelections) {
             pendingObligations: [...r.pendingObligations],
             rowObligationCardId: r.rowObligationCardId,
             lastDraw: r.lastDraw,
+            laterTakes: [],
         };
     }
     const slots = cardSelections.map((s) => {
@@ -1177,6 +1208,10 @@ function takeBackUnqualifiedMelds(game) {
         }
         return false;
     });
+    // Cascade takes made after the first series go back too (newest first),
+    // so the state is exactly the one just before that first series.
+    for (const take of [...attempt.laterTakes].reverse())
+        returnTakeToRow(r, take);
     r.comeOutAccum[r.current] = 0;
     r.pendingObligations = [...attempt.pendingObligations];
     r.rowObligationCardId = attempt.rowObligationCardId;
