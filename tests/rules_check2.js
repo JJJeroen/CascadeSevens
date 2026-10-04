@@ -30,13 +30,11 @@ check("can draw from open row before come-out", () => {
     throw new Error("canDrawFromRow false before come-out");
   const rowCard = game.round.openRow[game.round.openRow.length - 1];
   E.drawFromOpenRow(game, rowCard.id);
-  if (game.round.part !== 1)
-    throw new Error(
-      "row take should stay in Part 1 (repeatable) until finishDrawing()",
-    );
-  E.finishDrawing(game);
   if (game.round.part !== 2)
-    throw new Error("did not advance to part 2 after finishDrawing");
+    throw new Error("a row take should move straight on to Part 2");
+  E.finishDrawing(game); // harmless: the take already moved us on
+  if (game.round.part !== 2)
+    throw new Error("did not stay in part 2 after finishDrawing");
   if (!game.round.pendingObligations.includes(rowCard.id))
     throw new Error("no obligation created");
 });

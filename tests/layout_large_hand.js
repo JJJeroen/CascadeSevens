@@ -336,41 +336,27 @@ async function testRoundEnd(page, vp) {
     fail(`${tag}: pile-empty title was ${JSON.stringify(t2)}`);
 }
 
-// After taking from the open row the player must press "Done drawing"; make
-// sure the screen says so and that an early tap on a card explains itself.
+// Take, lay, take again: after a cascade take there is no "Done drawing" step,
+// and the cascade stays tappable in Part 2 (the pile does not).
 async function testDoneDrawing(page, vp) {
-  const tag = `${vp.name} done-drawing`;
+  const tag = `${vp.name} take-again`;
   const q = (js) => page.evalJs(js);
   await q(`(() => {
     const g = window.__cascadeTest.getGame();
-    g.round.part = 1; g.round.current = 0; g.round.rowDrawsThisPart1 = 1;
+    g.round.part = 2; g.round.current = 0; g.round.rowDrawsThisPart1 = 1;
     window.__t.setHand(9);
     window.__t.setTableau([]);
-    try { localStorage.removeItem("cascade.hintsSeen"); } catch {}
     window.__cascadeTest.render();
   })()`);
-  const s = await q(`(() => {
-    const b = document.querySelector("#finishDrawingBtn");
-    const bl = document.querySelector("#balloon");
-    return { btnVisible: !b.hidden && b.getBoundingClientRect().height > 0,
-             btnClass: b.className, balloon: bl.hidden ? null : bl.textContent.trim() };
-  })()`);
-  if (!s.btnVisible || !s.btnClass.includes("cta"))
+  const s = await q(`(() => ({
+    finishBtn: !!document.querySelector("#finishDrawingBtn"),
+    cards: document.querySelectorAll("#openRow .card").length,
+    pickable: document.querySelectorAll("#openRow .card.pickable").length,
+  }))()`);
+  if (s.finishBtn) fail(`${tag}: "Done drawing" should be gone`);
+  if (s.cards > 0 && s.pickable !== s.cards)
     fail(
-      `${tag}: "Done drawing" should be visible and prominent: ${JSON.stringify(s)}`,
-    );
-  if (!s.balloon || !/Done drawing/.test(s.balloon))
-    fail(
-      `${tag}: expected a balloon pointing at Done drawing, got ${JSON.stringify(s.balloon)}`,
-    );
-  await q(`document.querySelector("#balloonClose").click()`);
-  await q(`document.querySelector("#hand .card").click()`);
-  const tapped = await q(
-    `document.querySelector("#balloon").textContent.trim()`,
-  );
-  if (!/Done drawing/.test(tapped))
-    fail(
-      `${tag}: tapping a card early should explain; got ${JSON.stringify(tapped)}`,
+      `${tag}: cascade cards should stay tappable in Part 2: ${JSON.stringify(s)}`,
     );
 }
 

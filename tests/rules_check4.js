@@ -37,8 +37,8 @@ check(
     if (!E.canDrawFromClosedPile(game))
       throw new Error("closed pile should be available before any draw");
     E.drawFromOpenRow(game, "5S");
-    if (game.round.part !== 1)
-      throw new Error("should still be in Part 1 after a row draw");
+    if (game.round.part !== 2)
+      throw new Error("should be in Part 2 right after a row draw");
     if (E.canDrawFromClosedPile(game))
       throw new Error("closed pile should now be locked out");
     let threw = false;
@@ -77,17 +77,19 @@ check("only the most recent row draw is the binding obligation", () => {
     );
 });
 
-check("canFinishDrawing / finishDrawing gate correctly", () => {
-  const game = freshGameAtPart1([card("9", "H")]);
-  if (E.canFinishDrawing(game))
-    throw new Error("should not be able to finish before any draw");
-  E.drawFromOpenRow(game, "9H");
-  if (!E.canFinishDrawing(game))
-    throw new Error("should be able to finish after a row draw");
-  E.finishDrawing(game);
-  if (game.round.part !== 2)
-    throw new Error("finishDrawing should move to Part 2");
-});
+check(
+  "a row draw moves straight to Part 2; finishDrawing is a harmless no-op",
+  () => {
+    const game = freshGameAtPart1([card("9", "H")]);
+    if (E.canFinishDrawing(game))
+      throw new Error("should not be able to finish before any draw");
+    E.drawFromOpenRow(game, "9H");
+    if (E.canFinishDrawing(game))
+      throw new Error("nothing left to finish: a row draw moves on to Part 2");
+    E.finishDrawing(game); // harmless no-op
+    if (game.round.part !== 2) throw new Error("should stay in Part 2");
+  },
+);
 
 check(
   "undo restores closed-pile availability if it was the only row draw",

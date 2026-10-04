@@ -450,7 +450,8 @@ function renderOpenRow() {
     el.innerHTML = "";
     const g = game;
     const r = g.round;
-    const pickable = r.part === 1 && r.current === 0 && CascadeEngine.canDrawFromRow(g);
+    // Part 1, or Part 2 after a take this turn (take, lay, take again).
+    const pickable = r.current === 0 && CascadeEngine.canDrawFromRow(g);
     const turn0Mine = r.part === "turn0" && CascadeEngine.turn0CurrentAskee(g) === 0;
     // Keep the newest discard in view when the row grows past the screen.
     const grew = r.openRow.length > lastOpenRowLen;
@@ -716,16 +717,6 @@ function renderHand() {
                     catch (e) {
                         showError(errMsg(e));
                     }
-                    return;
-                }
-                if (r.part === 1 &&
-                    r.current === 0 &&
-                    CascadeEngine.canFinishDrawing(g)) {
-                    // Picked up from the open row but still in the draw step: the
-                    // melding controls only unlock after "Done drawing". Say so,
-                    // instead of silently ignoring the tap (it looked like the game
-                    // wouldn't let a meld be laid).
-                    showInfo('Tap "Done drawing" first, then lay a series.');
                     return;
                 }
                 if (r.part !== 2 || r.current !== 0)
@@ -1041,9 +1032,7 @@ function resolveDrop(ds) {
     }
     if (!ds.canPlay) {
         if (target)
-            showError(r.part === 1 && r.current === 0 && CascadeEngine.canFinishDrawing(g)
-                ? 'Tap "Done drawing" first, then you can play cards.'
-                : "You can only play cards after drawing, during your own turn.");
+            showError("You can only play cards after drawing, during your own turn.");
         return; // no target and can't play -> just snap back, no message needed
     }
     // Dragging one card out of an active multi-card selection: where it
@@ -1275,8 +1264,6 @@ function renderControls() {
     // trip through an error dialog for the obvious case).
     $("drawPileBtn").disabled =
         rearranging || !(isHumanTurn && CascadeEngine.canDrawFromClosedPile(g));
-    $("finishDrawingBtn").disabled =
-        rearranging || !(isHumanTurn && CascadeEngine.canFinishDrawing(g));
     $("undoDrawBtn").disabled =
         rearranging || !(isHumanTurn && CascadeEngine.canUndoDraw(g));
     $("clearSelectionBtn").disabled =
@@ -1315,7 +1302,6 @@ function renderControls() {
         rearranging || !(isHumanTurn && CascadeEngine.canStartRearrange(g));
     // Contextual action bar: only the actions that currently apply are shown.
     for (const id of [
-        "finishDrawingBtn",
         "layMeldBtn",
         "addToMeldBtn",
         "swapJokerBtn",
@@ -1375,15 +1361,6 @@ $("undoDrawBtn").addEventListener("click", () => {
     try {
         CascadeEngine.undoDraw(game);
         selectedHandCardIds.clear();
-        afterHumanAction();
-    }
-    catch (e) {
-        showError(errMsg(e));
-    }
-});
-$("finishDrawingBtn").addEventListener("click", () => {
-    try {
-        CascadeEngine.finishDrawing(game);
         afterHumanAction();
     }
     catch (e) {
@@ -1666,10 +1643,6 @@ function updateBalloon(g, r, isHumanTurn, rearranging, hand) {
             hideBalloon();
         return;
     }
-    if (CascadeEngine.canFinishDrawing(g)) {
-        showBalloon("finish", 'Done drawing? Tap "Done drawing" to start laying series.');
-        return;
-    }
     if (r.part === 1) {
         showBalloon("hint-draw", "Tap the pile to draw, or tap a card in the cascade to take it and everything on top.", true);
     }
@@ -1772,7 +1745,7 @@ $("menuHelpBtn").addEventListener("click", () => {
     // game ("series" for a laid set or run).
     showDialog("How to play", [
         "Each turn: draw, lay series on the table, then discard.",
-        "Draw: tap the pile for its top card, or tap a card in the cascade to take it and every card on top of it. Then tap Done drawing.",
+        "Draw: tap the pile for its top card, or tap a card in the cascade to take it and every card on top of it. You can lay series and then take more from the cascade, as long as you did not draw from the pile.",
         "Lay: put 3 or more cards on the table as a series (the same number in different suits, or a run in one suit). To come out, the series you lay in one turn must be worth 40 points or more (ace 25, 10-K 10, 2-9 5, joker 50). If they are worth less, you can lay more or take them back.",
         "Moving cards: drag back a series card you laid yourself (an end card of a run, or any card that leaves a valid series). To regroup any card on the table, even the AI's, use Rearrange… as long as every series is valid when you commit.",
         "Points: the coloured bar at the bottom of each card shows who scores it: orange for you, blue for the AI (the same colours as the scores). If you swap a joker out of the AI's series, your replacement card stays with the AI; the joker is yours to play.",
