@@ -36,18 +36,24 @@ function buildDeck() {
     deck.push({ id: "JOKER-2", rank: "JOKER", suit: null });
     return deck;
 }
-// A small deterministic LCG seeded by an integer -- lets a whole deal
+// A small deterministic PRNG (mulberry32) seeded by an integer -- lets a whole deal
 // (shuffle + starter coin-flip) be reproduced later from just the seed
 // value, e.g. to replay a disputed game (#16). Not cryptographically
 // strong; only needs to be deterministic and reasonably well-distributed
 // for shuffling. AI play has no randomness of its own (see ai.ts), so a
 // reproduced deal plus the same sequence of actions reproduces the whole
 // game, not just the initial hands.
+// Any finite number is a valid seed: it is floored and wrapped to 32 bits, so
+// negative or huge seeds work (the old LCG returned values outside [0, 1) for
+// negative seeds, which dealt undefined cards, and had only 233,280 states).
 function seededRng(seed) {
-    let s = seed;
+    let s = Math.floor(seed) >>> 0;
     return () => {
-        s = (s * 9301 + 49297) % 233280;
-        return s / 233280;
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 }
 function shuffle(deck, rng = Math.random) {
@@ -92,19 +98,16 @@ function startRound(game, rng = Math.random) {
         current: starter, // player index whose turn it is
         part: "turn0",
         turn0: { stage: "starterFirst", resolved: false, lastAcceptor: null },
-        pendingObligations: [], // card ids that must be resolved (melded, or discarded back if rowObligationCardId) before Part 3
-        // Which entry in pendingObligations (if any) is the current row-take's
-        // bottom card -- the ONLY kind of obligation that may be resolved by
-        // discarding it straight back to the row instead of melding it
-        // (confirmed against the designer 2026-07-27). A joker swap-out
-        // obligation is never discard-eligible; it must be melded.
+        pendingObligations: [], // card ids that must be laid on the table before Part 3
+        // Which entry in pendingObligations (if any) is the current cascade
+        // take's bottom card. Only the newest take's bottom card is owed.
         rowObligationCardId: null,
         lastDraw: null, // undoable until any other Part 2 action happens
         rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
+        turnStart: null,
         rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
         comeOutAccum: [0, 0], // points of new melds laid THIS turn toward the 40-point come-out bar (§2.4, revised 2026-10-03: single turn, no carry-over)
         comeOutAttempt: null, // snapshot for taking this turn's under-40 melds back
-        comeOutMetThisTurn: false,
         log: [],
         ended: false,
         endReason: null,
@@ -168,12 +171,16 @@ function turn0Accept(game, replacementCardId) {
     if (takerIdx === null)
         throw new Error("Turn 0 closed.");
     const hand = r.hands[takerIdx];
-    const takenCard = r.openRow.pop();
-    hand.push(takenCard);
-    const ci = findCard(hand, replacementCardId);
-    if (ci === -1)
+    // Validate before touching any state, so a bad id leaves the game as it was.
+    const starter = r.openRow[r.openRow.length - 1];
+    if (!starter)
+        throw new Error("There is no starter card to take.");
+    if (!hand.some((c) => c.id === replacementCardId) &&
+        starter.id !== replacementCardId)
         throw new Error("Replacement card not in hand.");
-    const [placed] = hand.splice(ci, 1);
+    r.openRow.pop();
+    hand.push(starter);
+    const [placed] = hand.splice(findCard(hand, replacementCardId), 1);
     r.openRow.push(placed);
     t.lastAcceptor = takerIdx;
     logMsg(game, `Player ${takerIdx + 1} took the starter card and swapped in ${placed.rank}${placed.suit || ""}.`);
@@ -210,22 +217,31 @@ function beginNormalRotation(game) {
 // for the rest of this turn; only the bottom card of the MOST RECENT
 // row-take is a binding "must meld" obligation — an earlier row-take's
 // obligation is superseded, not accumulated, once another row-take
-// happens. The player explicitly ends Part 1 via finishDrawing() once
-// they're done (only reachable after at least one draw).
+// happens. (Since 2026-10-04 a row-take moves straight on to Part 2 and
+// further takes stay possible there -- see canDrawFromRow below.)
+// Added 2026-10-04 (DESIGN.md decision 24, requested by Tommer): once a
+// player has taken from the cascade this turn they may keep taking after
+// laying series too (take, lay, take again). The pile stays locked.
 function canDrawFromRow(game) {
     const r = game.round;
-    return r.part === 1 && r.openRow.length > 0;
+    if (r.ended || r.openRow.length === 0)
+        return false;
+    if (r.part === 1)
+        return true;
+    return r.part === 2 && r.rowDrawsThisPart1 > 0 && !r.rearrange;
 }
 function canDrawFromClosedPile(game) {
     const r = game.round;
-    return r.part === 1 && r.rowDrawsThisPart1 === 0;
+    return r.part === 1 && !r.ended && r.rowDrawsThisPart1 === 0;
 }
 function drawFromClosedPile(game) {
     const r = game.round;
     if (!canDrawFromClosedPile(game)) {
-        throw new Error(r.part !== 1
-            ? "You can only do that while drawing."
-            : "Already took from the cascade this turn — the pile is no longer available.");
+        throw new Error(r.ended
+            ? "The round has ended."
+            : r.part !== 1
+                ? "You can only do that while drawing."
+                : "Already took from the cascade this turn — the pile is no longer available.");
     }
     if (r.closedPile.length === 0) {
         endRoundPileEmpty(game);
@@ -240,49 +256,81 @@ function drawFromClosedPile(game) {
 function drawFromOpenRow(game, cardId) {
     const r = game.round;
     if (!canDrawFromRow(game))
-        throw new Error("You can only take from the cascade while drawing, and only if it has cards.");
+        throw new Error("You can only take from the cascade while drawing (or after a take this turn), and only if it has cards.");
     const idx = r.openRow.findIndex((c) => c.id === cardId);
     if (idx === -1)
         throw new Error("Card not in the cascade.");
+    if (!r.turnStart) {
+        r.turnStart = structuredClone({
+            hand: r.hands[r.current],
+            openRow: r.openRow,
+            tableau: r.tableau,
+            comeOut: r.comeOut[r.current],
+            comeOutAccum: r.comeOutAccum[r.current],
+        });
+    }
     const taken = r.openRow.splice(idx); // this card + everything after it
     r.hands[r.current].push(...taken);
     const bottomCard = taken[0];
     const priorObligations = r.pendingObligations.slice();
     const priorRowObligationCardId = r.rowObligationCardId;
-    r.pendingObligations = [bottomCard.id]; // supersedes any earlier row-take's obligation this Part 1
+    // Supersedes any earlier take's obligation, but a joker-swap obligation
+    // (meld-only, possible once a take happens after laying) must survive.
+    r.pendingObligations = [
+        ...r.pendingObligations.filter((id) => id !== priorRowObligationCardId),
+        bottomCard.id,
+    ];
     r.rowObligationCardId = bottomCard.id;
     r.rowDrawsThisPart1 += 1;
-    logMsg(game, `Player ${r.current + 1} took ${taken.length} card(s) from the cascade (must lay ${bottomCard.rank}${bottomCard.suit || ""} in a series or discard it back).`);
+    const partBefore = r.part;
+    r.part = 2; // a take no longer needs a separate "Done drawing" step
+    logMsg(game, `Player ${r.current + 1} took ${taken.length} card(s) from the cascade (must lay ${bottomCard.rank}${bottomCard.suit || ""} on the table).`);
     r.lastDraw = {
         source: "row",
         takenCards: taken.slice(),
         priorObligations,
         priorRowObligationCardId,
+        partBefore,
+        previous: r.lastDraw,
     };
+    r.comeOutAttempt?.laterTakes.push(r.lastDraw);
 }
-// The deliberate step from Part 1 into Part 2, once the player is done
-// drawing (possible only after at least one open-row take — a closed-pile
-// draw already transitions straight to Part 2 on its own).
-function canFinishDrawing(game) {
+// Last-resort escape for a stuck turn (DESIGN decision 25): an owed cascade
+// card can't be discarded, and once other series are laid the pickup can no
+// longer be undone card by card. This puts the whole turn back to just before
+// the first cascade take (hand, cascade, table, come-out progress), after
+// which the player draws again -- from the pile if they like. Nothing hidden
+// is revealed (the cascade is public, the pile is not touched), so it gives
+// no information advantage.
+function canRestartTurn(game) {
     const r = game.round;
-    return r.part === 1 && r.rowDrawsThisPart1 > 0;
+    return r.part === 2 && !r.ended && !r.rearrange && !!r.turnStart;
 }
-function finishDrawing(game) {
+function restartTurn(game) {
     const r = game.round;
-    if (!canFinishDrawing(game))
-        throw new Error("Nothing to finish — draw first.");
-    r.part = 2;
-    // lastDraw deliberately survives this transition — see canUndoDraw.
+    if (!canRestartTurn(game))
+        throw new Error("There is no turn to start over.");
+    const start = structuredClone(r.turnStart);
+    r.hands[r.current] = start.hand;
+    r.openRow = start.openRow;
+    r.tableau = start.tableau;
+    r.comeOut[r.current] = start.comeOut;
+    r.comeOutAccum[r.current] = start.comeOutAccum;
+    r.comeOutAttempt = null;
+    r.pendingObligations = [];
+    r.rowObligationCardId = null;
+    r.lastDraw = null;
+    r.rowDrawsThisPart1 = 0;
+    r.turnStart = null;
+    r.part = 1;
+    logMsg(game, `Player ${r.current + 1} started the turn over.`);
 }
 // Taking from the open row is voluntary in principle (§2.5) — a player
 // shouldn't take a card they can't meld — but nothing stops a human from
 // doing it anyway and then discovering they're stuck. This is the escape
 // hatch: undo the most recent row-take, provided no *meld* action has
 // happened since (another row-take, or any Part 2 meld/add/swap/pull all
-// close the window by clearing lastDraw). Moving from Part 1 into Part 2
-// via finishDrawing does NOT close it on its own — that would strand a
-// player who clicks "Done drawing" before realizing they're stuck, which
-// is exactly the scenario this escape hatch exists for.
+// close the window by clearing lastDraw).
 function canUndoDraw(game) {
     const r = game.round;
     return !!r.lastDraw && r.lastDraw.source === "row";
@@ -291,22 +339,33 @@ function undoDraw(game) {
     const r = game.round;
     if (!canUndoDraw(game))
         throw new Error("Nothing to undo.");
-    const { takenCards, priorObligations, priorRowObligationCardId } = r.lastDraw;
+    const draw = r.lastDraw;
+    returnTakeToRow(r, draw);
+    r.part = draw.partBefore; // back to where the player was before this take
+    r.lastDraw = draw.previous; // step back: the take before this one is undoable next
+    const later = r.comeOutAttempt?.laterTakes;
+    if (later) {
+        const i = later.indexOf(draw);
+        if (i !== -1)
+            later.splice(i, 1);
+    }
+    logMsg(game, `Player ${r.current + 1} undid taking from the cascade.`);
+}
+// Puts one take's cards back at the end of the cascade and restores the
+// obligation state from before it.
+function returnTakeToRow(r, draw) {
     const hand = r.hands[r.current];
-    for (const c of takenCards) {
+    for (const c of draw.takenCards) {
         if (findCard(hand, c.id) === -1)
             throw new Error("Cannot undo — hand has changed since the draw.");
     }
-    for (const c of takenCards) {
+    for (const c of draw.takenCards) {
         hand.splice(findCard(hand, c.id), 1);
     }
-    r.openRow.push(...takenCards);
-    r.pendingObligations = priorObligations;
-    r.rowObligationCardId = priorRowObligationCardId;
+    r.openRow.push(...draw.takenCards);
+    r.pendingObligations = draw.priorObligations;
+    r.rowObligationCardId = draw.priorRowObligationCardId;
     r.rowDrawsThisPart1 -= 1;
-    r.part = 1; // reverts finishDrawing too, if it had already happened
-    r.lastDraw = null;
-    logMsg(game, `Player ${r.current + 1} undid taking from the cascade.`);
 }
 // --- Meld validation ------------------------------------------------------
 function orderedRankValue(rank, aceHigh) {
@@ -559,11 +618,10 @@ function layNewMeld(game, cardSelections) {
         throw new Error("Finish or cancel the current rearrange session first.");
     const hand = r.hands[r.current];
     const selectedIds = cardSelections.map((s) => s.cardId);
-    // The row obligation doesn't need a melding "buffer" -- it can always
-    // be discarded back instead, even as the very last card -- so only
-    // meld-only obligations (a joker swap-out never being discard-eligible)
-    // count toward the "keep enough cards to still resolve everything" check.
-    const meldOnlyObligationsAfter = r.pendingObligations.filter((id) => !selectedIds.includes(id) && id !== r.rowObligationCardId).length;
+    // Every owed card (the cascade take's bottom card, a swapped-out joker)
+    // must be laid on the table, so each one still owed after this action
+    // counts toward the "keep enough cards to resolve everything" check.
+    const meldOnlyObligationsAfter = r.pendingObligations.filter((id) => !selectedIds.includes(id)).length;
     assertLeavesHandUsable(hand, cardSelections.length, meldOnlyObligationsAfter);
     const result = validateNewMeldSelection(hand, cardSelections);
     if (!result.ok)
@@ -574,6 +632,7 @@ function layNewMeld(game, cardSelections) {
             pendingObligations: [...r.pendingObligations],
             rowObligationCardId: r.rowObligationCardId,
             lastDraw: r.lastDraw,
+            laterTakes: [],
         };
     }
     const slots = cardSelections.map((s) => {
@@ -625,19 +684,17 @@ function clearObligations(r, cardIds) {
 }
 // Guards the interaction between two rules that can otherwise collide:
 // melding your entire hand is illegal outright (§3 decision 8), but a
-// "must meld this card" obligation (only ever a joker swap-out -- a row
-// obligation can be discarded back instead, see discard() below) demands
-// exactly that card be melded that same turn. If an action is allowed to
-// shrink the hand down to (or below) the number of cards still owed to a
-// meld-only obligation, that obligation becomes permanently unmeldable --
-// every remaining meld action requires keeping at least one card behind,
-// so a hand that equals its own meld-only-obligation list can never
-// legally clear it, and discard refuses to run while any obligation is
-// outstanding. Checked, pre-mutation, by every action that can shrink the
-// hand or add a new obligation (layNewMeld, addToMeld, swapJoker) using
-// the hand size and *meld-only* obligation count after the action would
-// apply -- the row obligation, if any, is deliberately excluded from
-// this count since it never needs a melding buffer.
+// "must lay this card" obligation (the cascade take's bottom card, or a joker
+// swap-out; neither may be discarded, see discard() below) demands exactly
+// that card be laid that same turn. If an action is allowed to shrink the
+// hand down to (or below) the number of cards still owed, that obligation
+// becomes permanently unlayable -- every remaining meld action requires
+// keeping at least one card behind, so a hand that equals its own
+// obligation list can never legally clear it, and discard refuses to run
+// while any obligation is outstanding. Checked, pre-mutation, by every
+// action that can shrink the hand or add a new obligation (layNewMeld,
+// addToMeld, swapJoker) using the hand size and the obligation count after
+// the action would apply.
 function assertLeavesHandUsable(hand, cardsBeingRemovedCount, obligationsAfterCount) {
     const remaining = hand.length - cardsBeingRemovedCount;
     if (obligationsAfterCount > 0 && remaining <= obligationsAfterCount) {
@@ -663,7 +720,7 @@ function addToMeld(game, meldId, cardId, wildAs) {
     if (!meld)
         throw new Error("Series not found.");
     const card = hand[ci];
-    const meldOnlyObligationsAfter = r.pendingObligations.filter((id) => id !== card.id && id !== r.rowObligationCardId).length;
+    const meldOnlyObligationsAfter = r.pendingObligations.filter((id) => id !== card.id).length;
     assertLeavesHandUsable(hand, 1, meldOnlyObligationsAfter);
     if (card.rank === "JOKER" && !wildAs) {
         throw new Error("A joker needs a rank assignment to be added to a series.");
@@ -824,12 +881,10 @@ function swapJoker(game, meldId, jokerCardId, replacementCardId) {
     // Net hand size is unchanged by a swap (replacement out, joker back
     // in), but the joker becomes a new obligation -- so check against the
     // hand as it stands now (0 cards "removed") but with that obligation
-    // added, alongside whatever meld-only obligations survive (the
-    // replacement card itself might have been one, and is resolved by this
-    // same action; the row obligation, if any and if untouched, doesn't
-    // count here -- it can always be discarded back instead of melded).
-    // The reclaimed joker itself is always meld-only, hence the +1.
-    const meldOnlyObligationsAfter = r.pendingObligations.filter((id) => id !== replacementCardId && id !== r.rowObligationCardId).length + 1;
+    // added, alongside whatever obligations survive (the replacement card
+    // itself might have been one, and is resolved by this same action).
+    // The reclaimed joker itself is the +1.
+    const meldOnlyObligationsAfter = r.pendingObligations.filter((id) => id !== replacementCardId).length + 1;
     assertLeavesHandUsable(hand, 0, meldOnlyObligationsAfter);
     const wildAs = slot.wildAs;
     if (meld.type === "set") {
@@ -953,12 +1008,11 @@ function canStartRearrange(game) {
     return (r.part === 2 &&
         !r.ended &&
         r.comeOut[r.current] &&
-        // A meld-only obligation (a reclaimed joker from a swap) still blocks
-        // starting a session -- but an outstanding row obligation doesn't
-        // (confirmed against the designer 2026-07-27): the row card is
-        // discard-eligible on its own, and can equally be resolved by simply
-        // folding it into a valid group during the session (see
-        // commitRearrange, which clears the obligation if that happens).
+        // A reclaimed joker from a swap still blocks starting a session -- but
+        // an outstanding row obligation doesn't (confirmed against the designer
+        // 2026-07-27): it can be resolved by folding the card into a valid group
+        // during the session (see commitRearrange, which clears the obligation
+        // if that happens).
         r.pendingObligations.every((id) => id === r.rowObligationCardId) &&
         !r.rearrange);
 }
@@ -1062,6 +1116,7 @@ function commitRearrange(game) {
     const rr = r.rearrange;
     const groupIds = Object.keys(rr.groups);
     const resolvedByGroup = {};
+    const untouchedByGroup = {};
     const problems = [];
     for (const gid of groupIds) {
         const cardIds = rr.groups[gid];
@@ -1072,6 +1127,17 @@ function commitRearrange(game) {
                 cardIds,
                 error: "A series needs at least 3 cards.",
             });
+            continue;
+        }
+        // A group with exactly the cards of a series already on the table is
+        // untouched: keep that series as it is. Re-solving it could move a
+        // joker to a different card (the solver prefers the low end of a run),
+        // which would let a rearrange silently change what the opponent's joker
+        // stands for.
+        const untouched = r.tableau.find((m) => m.slots.length === cardIds.length &&
+            m.slots.every((sl) => cardIds.includes(sl.card.id)));
+        if (untouched) {
+            untouchedByGroup[gid] = untouched;
             continue;
         }
         const resolved = resolveGroup(cards);
@@ -1107,6 +1173,9 @@ function commitRearrange(game) {
     if (problems.length > 0)
         return { ok: false, problems };
     const newTableau = groupIds.map((gid) => {
+        const kept = untouchedByGroup[gid];
+        if (kept)
+            return { ...kept, id: gid };
         const resolved = resolvedByGroup[gid];
         return {
             id: gid,
@@ -1135,14 +1204,12 @@ function commitRearrange(game) {
     return { ok: true };
 }
 // --- Part 3: discard --------------------------------------------------------
-// True if there's at least one legal card to discard right now -- i.e.
-// every outstanding obligation is either already cleared, or is exactly
-// the row obligation (which discard() itself allows to be resolved by
-// discarding it, rather than requiring a meld).
+// True if the player may discard right now: every card they owe this turn
+// (§2.5: the cascade take's bottom card; §2.3: a swapped-out joker) has been
+// laid on the table.
 function canProceedToDiscard(game) {
     const r = game.round;
-    return (r.part === 2 &&
-        r.pendingObligations.every((id) => id === r.rowObligationCardId));
+    return r.part === 2 && r.pendingObligations.length === 0;
 }
 // §2.4 (revised 2026-10-03): the 40 points to come out must be laid within a
 // single turn. Returns how many more points the current player needs if they
@@ -1177,6 +1244,10 @@ function takeBackUnqualifiedMelds(game) {
         }
         return false;
     });
+    // Cascade takes made after the first series go back too (newest first),
+    // so the state is exactly the one just before that first series.
+    for (const take of [...attempt.laterTakes].reverse())
+        returnTakeToRow(r, take);
     r.comeOutAccum[r.current] = 0;
     r.pendingObligations = [...attempt.pendingObligations];
     r.rowObligationCardId = attempt.rowObligationCardId;
@@ -1197,25 +1268,22 @@ function discard(game, cardId) {
     const ci = findCard(hand, cardId);
     if (ci === -1)
         throw new Error("Card not in hand.");
-    // Any obligation OTHER than the row-take's bottom card must still be
-    // resolved (melded) before Part 3 -- confirmed the row-take card
-    // specifically may be discarded straight back to the row instead of
-    // melded (2026-07-27); a joker swap-out obligation was not included in
-    // that confirmation and still requires a meld.
-    const otherObligationsRemain = r.pendingObligations.some((id) => id !== cardId);
-    if (otherObligationsRemain)
-        throw new Error("Cards you owe must be laid in a series first.");
-    const isObligated = r.pendingObligations.includes(cardId);
-    if (isObligated && cardId !== r.rowObligationCardId) {
-        throw new Error("This card was reclaimed from a joker swap and must be laid in a series, not discarded, this turn.");
-    }
+    // Every card owed this turn must be laid on the table first -- the
+    // cascade take's bottom card (DESIGN decision 25, 2026-10-05: it can no
+    // longer be discarded straight back) and a swapped-out joker alike.
+    if (r.pendingObligations.length > 0)
+        throw new Error("Cards you owe must be laid on the table first.");
     const [card] = hand.splice(ci, 1);
     r.openRow.push(card);
-    if (isObligated)
-        clearObligations(r, [cardId]);
-    logMsg(game, `Player ${r.current + 1} discarded ${card.rank}${card.suit || ""}${isObligated ? " (the card taken from the cascade, back on the cascade)" : ""}.`);
+    logMsg(game, `Player ${r.current + 1} discarded ${card.rank}${card.suit || ""}.`);
     if (hand.length === 0) {
         endRoundHandOut(game, r.current);
+        return;
+    }
+    // Empty closed pile (DESIGN decision 3): the round ends when the player who
+    // drew the last card has finished their turn.
+    if (r.closedPile.length === 0) {
+        endRoundPileEmpty(game);
         return;
     }
     advanceTurn(game);
@@ -1227,6 +1295,7 @@ function advanceTurn(game) {
     r.lastDraw = null;
     r.rowDrawsThisPart1 = 0;
     r.comeOutAttempt = null;
+    r.turnStart = null;
 }
 // --- Round / game end ---------------------------------------------------
 function endRoundHandOut(game, winnerIdx) {
@@ -1330,10 +1399,10 @@ export const CascadeEngine = {
     canDrawFromClosedPile,
     drawFromClosedPile,
     drawFromOpenRow,
-    canFinishDrawing,
-    finishDrawing,
     canUndoDraw,
     undoDraw,
+    canRestartTurn,
+    restartTurn,
     validateNewMeldSelection,
     autoResolveMeld,
     hasComeOut,

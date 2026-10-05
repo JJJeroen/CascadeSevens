@@ -1,20 +1,14 @@
 import { CascadeEngine } from "../docs/engine.js";
 import { CascadeAI } from "../docs/ai.js";
 
-function seededRng(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 9301 + 49297) % 233280;
-    return s / 233280;
-  };
-}
+const seededRng = (seed) => CascadeEngine.seededRng(seed); // the engine's own seeded generator
 
 let totalRounds = 0;
 let maxTurnsSeen = 0;
 
 for (let g = 0; g < 300; g++) {
   const rng = seededRng(g * 7919 + 13);
-  const game = CascadeEngine.newGame(g % 2 === 0 ? "quick" : "standard");
+  const game = CascadeEngine.newGame(g % 2 === 0 ? "quick" : "standard", rng);
   let safety = 0;
   while (!game.gameOver && safety < 30) {
     safety++;

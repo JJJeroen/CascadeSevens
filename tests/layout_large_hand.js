@@ -326,44 +326,60 @@ async function testRoundEnd(page, vp) {
     fail(`${tag}: unexpected dialog ${JSON.stringify(d)}`);
   if (d.buttons.join() !== "Round 2,New game")
     fail(`${tag}: unexpected buttons ${JSON.stringify(d.buttons)}`);
+  // A round that ends because the pile ran empty says so in the title.
+  const t2 = await page.evalJs(`(() => {
+    window.__cascadeTest.getGame().round.endReason = "pile-empty";
+    window.__cascadeTest.render();
+    return document.querySelector("#modalRoot .dialog-title")?.textContent;
+  })()`);
+  if (t2 !== "Round ended, pile empty")
+    fail(`${tag}: pile-empty title was ${JSON.stringify(t2)}`);
 }
 
-// After taking from the open row the player must press "Done drawing"; make
-// sure the screen says so and that an early tap on a card explains itself.
+// Take, lay, take again: after a cascade take there is no "Done drawing" step,
+// and the cascade stays tappable in Part 2 (the pile does not).
 async function testDoneDrawing(page, vp) {
-  const tag = `${vp.name} done-drawing`;
+  const tag = `${vp.name} take-again`;
   const q = (js) => page.evalJs(js);
   await q(`(() => {
     const g = window.__cascadeTest.getGame();
-    g.round.part = 1; g.round.current = 0; g.round.rowDrawsThisPart1 = 1;
+    g.round.part = 2; g.round.current = 0; g.round.rowDrawsThisPart1 = 1;
     window.__t.setHand(9);
     window.__t.setTableau([]);
-    try { localStorage.removeItem("cascade.hintsSeen"); } catch {}
     window.__cascadeTest.render();
   })()`);
-  const s = await q(`(() => {
-    const b = document.querySelector("#finishDrawingBtn");
-    const bl = document.querySelector("#balloon");
-    return { btnVisible: !b.hidden && b.getBoundingClientRect().height > 0,
-             btnClass: b.className, balloon: bl.hidden ? null : bl.textContent.trim() };
+  const s = await q(`(() => ({
+    finishBtn: !!document.querySelector("#finishDrawingBtn"),
+    cards: document.querySelectorAll("#openRow .card").length,
+    pickable: document.querySelectorAll("#openRow .card.pickable").length,
+  }))()`);
+  if (s.finishBtn) fail(`${tag}: "Done drawing" should be gone`);
+  if (s.cards > 0 && s.pickable !== s.cards)
+    fail(
+      `${tag}: cascade cards should stay tappable in Part 2: ${JSON.stringify(s)}`,
+    );
+}
+
+// A targeted series that disappears must not keep "Pull my cards" enabled.
+async function testStaleTarget(page, vp) {
+  const tag = `${vp.name} stale-target`;
+  const q = (js) => page.evalJs(js);
+  await q(`(() => {
+    const r = window.__cascadeTest.getGame().round;
+    r.part = 2; r.current = 0; r.ended = false; r.comeOut[0] = true; r.rearrange = null;
+    window.__t.setHand(5);
+    window.__t.setTableau([window.__t.run("m1", "H", 0, 4)]);
+    document.querySelector("#tableau .meld").click();
   })()`);
-  if (!s.btnVisible || !s.btnClass.includes("cta"))
-    fail(
-      `${tag}: "Done drawing" should be visible and prominent: ${JSON.stringify(s)}`,
+  const shown = () =>
+    q(
+      `(() => { const b = document.querySelector("#pullMeldBtn"); return !b.hidden; })()`,
     );
-  if (!s.balloon || !/Done drawing/.test(s.balloon))
-    fail(
-      `${tag}: expected a balloon pointing at Done drawing, got ${JSON.stringify(s.balloon)}`,
-    );
-  await q(`document.querySelector("#balloonClose").click()`);
-  await q(`document.querySelector("#hand .card").click()`);
-  const tapped = await q(
-    `document.querySelector("#balloon").textContent.trim()`,
-  );
-  if (!/Done drawing/.test(tapped))
-    fail(
-      `${tag}: tapping a card early should explain; got ${JSON.stringify(tapped)}`,
-    );
+  if (!(await shown()))
+    fail(`${tag}: precondition: Pull should show while a series is targeted`);
+  await q(`window.__t.setTableau([])`);
+  if (await shown())
+    fail(`${tag}: Pull must hide once the targeted series is gone`);
 }
 
 // Opponent's come-out progress next to the round label.
@@ -842,6 +858,7 @@ async function main() {
       await testTurn0(page, vp);
       await testBlockedPullHint(page, vp);
       await testJokerObligation(page, vp);
+      await testStaleTarget(page, vp);
       await testRoundEnd(page, vp); // leaves the round marked ended...
       await testMovablePopup(page, vp); // ...which this one needs
     }

@@ -59,6 +59,12 @@ export interface LastDraw {
   takenCards: Card[];
   priorObligations: string[];
   priorRowObligationCardId: string | null;
+  // Part the turn was in when this take happened (a take after laying is
+  // made in Part 2), so undoing it puts the player back where they were.
+  partBefore: 1 | 2;
+  // The still-undoable take before this one (none once a meld was laid in
+  // between), so undo can step back through consecutive takes.
+  previous: LastDraw | null;
 }
 
 // Active draft-then-commit tableau rearrange session (§2.3). Keyed by
@@ -77,6 +83,19 @@ export interface ComeOutAttempt {
   pendingObligations: string[]; // state from just before the first one
   rowObligationCardId: string | null;
   lastDraw: LastDraw | null;
+  // Cascade takes made after the first of those melds (DESIGN.md decision
+  // 24); taking the melds back returns these cards to the cascade too.
+  laterTakes: LastDraw[];
+}
+
+// What the current player's turn looked like just before their first cascade
+// take, so a stuck turn can be started over (DESIGN decision 25).
+export interface TurnStart {
+  hand: Card[];
+  openRow: Card[];
+  tableau: Meld[];
+  comeOut: boolean;
+  comeOutAccum: number;
 }
 
 export type RoundPart = "turn0" | 1 | 2 | 3;
@@ -99,6 +118,7 @@ export interface Round {
   lastDraw: LastDraw | null;
   rearrange: RearrangeSession | null;
   rowDrawsThisPart1: number;
+  turnStart: TurnStart | null; // set by the turn's first cascade take; null otherwise
   // Points of NEW melds the current player has laid THIS turn while not yet
   // come out (DESIGN.md 2.4, revised 2026-10-03: 40+ must be reached within a
   // single turn -- it no longer carries over). Must be 0 or the player has
@@ -106,7 +126,6 @@ export interface Round {
   comeOutAccum: [number, number];
   // What to restore if the player takes this turn's under-40 melds back.
   comeOutAttempt: ComeOutAttempt | null;
-  comeOutMetThisTurn: boolean;
   log: string[];
   ended: boolean;
   endReason: EndReason | null;

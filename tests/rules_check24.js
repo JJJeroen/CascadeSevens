@@ -89,7 +89,6 @@ check("take back restores the open-row obligation and pickup undo", () => {
     card("8", "D"),
   ];
   E.drawFromOpenRow(game, "9C");
-  E.finishDrawing(game);
   if (!game.round.pendingObligations.includes("9C"))
     throw new Error("setup: 9C should be owed");
   lay(game, card("9", "S"), card("9", "H"), card("9", "C")); // 15 < 40; clears the obligation
@@ -104,7 +103,14 @@ check("take back restores the open-row obligation and pickup undo", () => {
     throw new Error("rowObligationCardId not restored");
   if (!E.canUndoDraw(game))
     throw new Error("pickup undo should be available again");
-  E.discard(game, "9C"); // the owed card may go straight back to the row
+  let threw = false;
+  try {
+    E.discard(game, "9C"); // the owed card can't go back to the cascade
+  } catch {
+    threw = true;
+  }
+  if (!threw) throw new Error("the owed card must not be discardable");
+  E.undoDraw(game); // the way out is undoing the pickup
 });
 
 check("take back is refused once you've come out, or with nothing laid", () => {
