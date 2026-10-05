@@ -137,11 +137,9 @@ check("cards are conserved by a restart", () => {
   if (total() !== t0) throw new Error("cards lost or duplicated");
 });
 
-check("not available without a cascade take or during a rearrange", () => {
+check("not available before any draw, or during a rearrange", () => {
   const game = setup();
-  E.drawFromClosedPile(game);
-  if (E.canRestartTurn(game))
-    throw new Error("no cascade take: nothing to restart");
+  if (E.canRestartTurn(game)) throw new Error("nothing drawn yet");
   const g2 = setup();
   E.drawFromOpenRow(g2, "5C");
   if (!E.canRestartTurn(g2))
@@ -155,6 +153,68 @@ check("not available without a cascade take or during a rearrange", () => {
   };
   if (E.canRestartTurn(g2)) throw new Error("not during a rearrange session");
 });
+
+// Player 0 has come out; the opponent's 7-7-Joker is on the table; hand has
+// the 7D that swaps the joker out but nothing that can replay the joker.
+function swapSetup() {
+  const game = setup();
+  const r = game.round;
+  r.tableau = [
+    {
+      id: "m1",
+      type: "set",
+      slots: [
+        { card: card("7", "S"), ownerId: 1, wildAs: null },
+        { card: card("7", "H"), ownerId: 1, wildAs: null },
+        { card: card("JOKER"), ownerId: 1, wildAs: { rank: "7" } },
+      ],
+    },
+  ];
+  r.hands[0] = [card("7", "D"), card("2", "C"), card("9", "D"), card("K", "S")];
+  r.closedPile = [card("3", "H"), card("4", "H")]; // draws 4H; the pile must not run empty
+  return game;
+}
+
+check(
+  "a swapped joker that cannot be replayed: restart returns to just after the pile draw",
+  () => {
+    const game = swapSetup();
+    const r = game.round;
+    E.drawFromClosedPile(game); // draws 4H
+    const afterDraw = snap(game);
+    E.swapJoker(game, "m1", "JOKERJ", "7D"); // the joker is now owed
+    if (!throws(() => E.discard(game, "2C")))
+      throw new Error("setup: the owed joker should block the discard");
+    if (!E.canRestartTurn(game)) throw new Error("restart should be possible");
+    E.restartTurn(game);
+    if (snap(game) !== afterDraw)
+      throw new Error("state differs from just after the draw");
+    if (r.part !== 2)
+      throw new Error("should stay in Part 2 (the draw is kept)");
+    if (r.pendingObligations.length !== 0) throw new Error("joker still owed");
+    if (!r.hands[0].some((c) => c.id === "4H"))
+      throw new Error("the drawn card must stay in hand");
+    E.discard(game, "2C"); // the turn can now end
+    if (r.current !== 1) throw new Error("turn should have ended");
+  },
+);
+
+check(
+  "restart after a pile draw cannot be used to take from the cascade instead",
+  () => {
+    const game = swapSetup();
+    E.drawFromClosedPile(game);
+    E.swapJoker(game, "m1", "JOKERJ", "7D");
+    E.restartTurn(game);
+    if (E.canDrawFromRow(game))
+      throw new Error("cascade take must stay closed");
+    if (E.canDrawFromClosedPile(game)) throw new Error("no second pile draw");
+    // and a second restart is still possible after another stuck swap
+    E.swapJoker(game, "m1", "JOKERJ", "7D");
+    if (!E.canRestartTurn(game)) throw new Error("second restart should work");
+    E.restartTurn(game);
+  },
+);
 
 check("the snapshot does not leak into the next turn", () => {
   const game = setup();

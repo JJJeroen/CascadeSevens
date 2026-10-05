@@ -297,6 +297,18 @@ function drawFromClosedPile(game: Game): void {
   logMsg(game, `Player ${r.current + 1} drew from the pile.`);
   r.part = 2;
   r.lastDraw = null;
+  r.turnStart = snapshotTurn(r, 2); // after the draw: the drawn card has been seen
+}
+
+function snapshotTurn(r: Round, part: 1 | 2): TurnStart {
+  return structuredClone({
+    part,
+    hand: r.hands[r.current],
+    openRow: r.openRow,
+    tableau: r.tableau,
+    comeOut: r.comeOut[r.current],
+    comeOutAccum: r.comeOutAccum[r.current],
+  });
 }
 
 function drawFromOpenRow(game: Game, cardId: string): void {
@@ -307,15 +319,7 @@ function drawFromOpenRow(game: Game, cardId: string): void {
     );
   const idx = r.openRow.findIndex((c) => c.id === cardId);
   if (idx === -1) throw new Error("Card not in the cascade.");
-  if (!r.turnStart) {
-    r.turnStart = structuredClone({
-      hand: r.hands[r.current],
-      openRow: r.openRow,
-      tableau: r.tableau,
-      comeOut: r.comeOut[r.current],
-      comeOutAccum: r.comeOutAccum[r.current],
-    });
-  }
+  if (!r.turnStart) r.turnStart = snapshotTurn(r, 1);
   const taken = r.openRow.splice(idx); // this card + everything after it
   r.hands[r.current].push(...taken);
   const bottomCard = taken[0];
@@ -346,13 +350,15 @@ function drawFromOpenRow(game: Game, cardId: string): void {
   r.comeOutAttempt?.laterTakes.push(r.lastDraw);
 }
 
-// Last-resort escape for a stuck turn (DESIGN decision 25): an owed cascade
-// card can't be discarded, and once other series are laid the pickup can no
-// longer be undone card by card. This puts the whole turn back to just before
-// the first cascade take (hand, cascade, table, come-out progress), after
-// which the player draws again -- from the pile if they like. Nothing hidden
-// is revealed (the cascade is public, the pile is not touched), so it gives
-// no information advantage.
+// Last-resort escape for a stuck turn (DESIGN decision 25): an owed card (the
+// cascade take's bottom card, or a swapped-out joker) can't be discarded, and
+// once other series are laid it can no longer be undone card by card. This
+// puts the whole turn back (hand, cascade, table, come-out progress):
+// - if the turn started with a cascade take: to just before that take, after
+//   which the player draws again -- from the pile if they like;
+// - if it started with a pile draw: to just after that draw (never before it,
+//   or the player could peek at the pile card and then take from the cascade).
+// Nothing hidden is revealed, so it gives no information advantage.
 function canRestartTurn(game: Game): boolean {
   const r = game.round as Round;
   return r.part === 2 && !r.ended && !r.rearrange && !!r.turnStart;
@@ -373,7 +379,10 @@ function restartTurn(game: Game): void {
   r.lastDraw = null;
   r.rowDrawsThisPart1 = 0;
   r.turnStart = null;
-  r.part = 1;
+  r.part = start.part;
+  // A restart after a pile draw has to keep the draw: take a fresh snapshot of
+  // that same state, so a further restart is possible.
+  if (start.part === 2) r.turnStart = snapshotTurn(r, 2);
   logMsg(game, `Player ${r.current + 1} started the turn over.`);
 }
 
