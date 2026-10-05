@@ -104,6 +104,7 @@ function startRound(game, rng = Math.random) {
         rowObligationCardId: null,
         lastDraw: null, // undoable until any other Part 2 action happens
         rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
+        turnStart: null,
         rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
         comeOutAccum: [0, 0], // points of new melds laid THIS turn toward the 40-point come-out bar (§2.4, revised 2026-10-03: single turn, no carry-over)
         comeOutAttempt: null, // snapshot for taking this turn's under-40 melds back
@@ -260,6 +261,15 @@ function drawFromOpenRow(game, cardId) {
     const idx = r.openRow.findIndex((c) => c.id === cardId);
     if (idx === -1)
         throw new Error("Card not in the cascade.");
+    if (!r.turnStart) {
+        r.turnStart = structuredClone({
+            hand: r.hands[r.current],
+            openRow: r.openRow,
+            tableau: r.tableau,
+            comeOut: r.comeOut[r.current],
+            comeOutAccum: r.comeOutAccum[r.current],
+        });
+    }
     const taken = r.openRow.splice(idx); // this card + everything after it
     r.hands[r.current].push(...taken);
     const bottomCard = taken[0];
@@ -301,6 +311,36 @@ function finishDrawing(game) {
         throw new Error("Nothing to finish — draw first.");
     r.part = 2;
     // lastDraw deliberately survives this transition — see canUndoDraw.
+}
+// Last-resort escape for a stuck turn (DESIGN decision 25): an owed cascade
+// card can't be discarded, and once other series are laid the pickup can no
+// longer be undone card by card. This puts the whole turn back to just before
+// the first cascade take (hand, cascade, table, come-out progress), after
+// which the player draws again -- from the pile if they like. Nothing hidden
+// is revealed (the cascade is public, the pile is not touched), so it gives
+// no information advantage.
+function canRestartTurn(game) {
+    const r = game.round;
+    return r.part === 2 && !r.ended && !r.rearrange && !!r.turnStart;
+}
+function restartTurn(game) {
+    const r = game.round;
+    if (!canRestartTurn(game))
+        throw new Error("There is no turn to start over.");
+    const start = structuredClone(r.turnStart);
+    r.hands[r.current] = start.hand;
+    r.openRow = start.openRow;
+    r.tableau = start.tableau;
+    r.comeOut[r.current] = start.comeOut;
+    r.comeOutAccum[r.current] = start.comeOutAccum;
+    r.comeOutAttempt = null;
+    r.pendingObligations = [];
+    r.rowObligationCardId = null;
+    r.lastDraw = null;
+    r.rowDrawsThisPart1 = 0;
+    r.turnStart = null;
+    r.part = 1;
+    logMsg(game, `Player ${r.current + 1} started the turn over.`);
 }
 // Taking from the open row is voluntary in principle (§2.5) — a player
 // shouldn't take a card they can't meld — but nothing stops a human from
@@ -1275,6 +1315,7 @@ function advanceTurn(game) {
     r.lastDraw = null;
     r.rowDrawsThisPart1 = 0;
     r.comeOutAttempt = null;
+    r.turnStart = null;
 }
 // --- Round / game end ---------------------------------------------------
 function endRoundHandOut(game, winnerIdx) {
@@ -1382,6 +1423,8 @@ export const CascadeEngine = {
     finishDrawing,
     canUndoDraw,
     undoDraw,
+    canRestartTurn,
+    restartTurn,
     validateNewMeldSelection,
     autoResolveMeld,
     hasComeOut,

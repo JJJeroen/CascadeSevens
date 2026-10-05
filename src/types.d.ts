@@ -88,6 +88,16 @@ export interface ComeOutAttempt {
   laterTakes: LastDraw[];
 }
 
+// What the current player's turn looked like just before their first cascade
+// take, so a stuck turn can be started over (DESIGN decision 25).
+export interface TurnStart {
+  hand: Card[];
+  openRow: Card[];
+  tableau: Meld[];
+  comeOut: boolean;
+  comeOutAccum: number;
+}
+
 export type RoundPart = "turn0" | 1 | 2 | 3;
 
 export type EndReason = "handout" | "pile-empty";
@@ -108,6 +118,7 @@ export interface Round {
   lastDraw: LastDraw | null;
   rearrange: RearrangeSession | null;
   rowDrawsThisPart1: number;
+  turnStart: TurnStart | null; // set by the turn's first cascade take; null otherwise
   // Points of NEW melds the current player has laid THIS turn while not yet
   // come out (DESIGN.md 2.4, revised 2026-10-03: 40+ must be reached within a
   // single turn -- it no longer carries over). Must be 0 or the player has

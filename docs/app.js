@@ -1246,7 +1246,7 @@ function renderControls() {
                     ? "Joker (you must use it this turn)"
                     : `${label} (must lay it in a series)`;
         });
-        obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : ""}`;
+        obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : CascadeEngine.canRestartTurn(g) ? ' (stuck? tap "Start turn over")' : ""}`;
     }
     else {
         obligEl.hidden = true;
@@ -1276,6 +1276,13 @@ function renderControls() {
     // trip through an error dialog for the obvious case).
     $("drawPileBtn").disabled =
         rearranging || !(isHumanTurn && CascadeEngine.canDrawFromClosedPile(g));
+    // Only offered while something is still owed: that is the state a player
+    // can get stuck in (an owed card that can't be laid can't be discarded).
+    $("restartTurnBtn").disabled =
+        rearranging ||
+            !(isHumanTurn &&
+                CascadeEngine.canRestartTurn(g) &&
+                r.pendingObligations.length > 0);
     $("undoDrawBtn").disabled =
         rearranging || !(isHumanTurn && CascadeEngine.canUndoDraw(g));
     $("clearSelectionBtn").disabled =
@@ -1308,6 +1315,7 @@ function renderControls() {
     // Contextual action bar: only the actions that currently apply are shown.
     for (const id of [
         "layMeldBtn",
+        "restartTurnBtn",
         "addToMeldBtn",
         "swapJokerBtn",
         "pullMeldBtn",
@@ -1361,6 +1369,25 @@ $("drawPileBtn").addEventListener("click", () => {
     catch (e) {
         showError(errMsg(e));
     }
+});
+$("restartTurnBtn").addEventListener("click", () => {
+    showDialog("Start your turn over?", "Everything you did this turn is put back (the cards you took, the series you laid), and you draw again.", [
+        { label: "Cancel", secondary: true },
+        {
+            label: "Start over",
+            onClick: () => {
+                try {
+                    CascadeEngine.restartTurn(game);
+                    selectedHandCardIds.clear();
+                    targetedMeldId = null;
+                    afterHumanAction();
+                }
+                catch (e) {
+                    showError(errMsg(e));
+                }
+            },
+        },
+    ]);
 });
 $("undoDrawBtn").addEventListener("click", () => {
     try {

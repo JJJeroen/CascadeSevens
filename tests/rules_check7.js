@@ -223,6 +223,32 @@ check(
   },
 );
 
+check(
+  "AI whose pickup is no longer undoable card by card starts the turn over instead of stalling",
+  () => {
+    const game = E.newGame("standard", () => 0.1);
+    E.startRound(game, () => 0.5);
+    E.turn0Decline(game);
+    E.turn0Decline(game);
+    game.round.current = 1;
+    game.round.comeOut[1] = true;
+    game.round.hands[1] = [
+      { id: "4C", rank: "4", suit: "C" },
+      { id: "KD", rank: "K", suit: "D" },
+    ];
+    game.round.openRow = [{ id: "5C", rank: "5", suit: "C" }];
+    E.drawFromOpenRow(game, "5C");
+    game.round.lastDraw = null; // as if other series had been laid since
+    CascadeAI.takeTurn(game, { onStateChanged: () => {} });
+    if (game.round.pendingObligations.length !== 0)
+      throw new Error("nothing may still be owed after the turn");
+    if (game.round.current !== 0)
+      throw new Error("the AI's turn should be over");
+    if (!game.round.openRow.some((c) => c.id === "5C"))
+      throw new Error("5C should be back on the cascade");
+  },
+);
+
 console.log(
   failures === 0 ? "\nALL RULE CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`,
 );

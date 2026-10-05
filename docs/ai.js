@@ -521,6 +521,10 @@ function takeTurn(game, callbacks) {
     if (r.pendingObligations.length > 0 || r.part === 1) {
         while (r.pendingObligations.length > 0 && CascadeEngine.canUndoDraw(game))
             CascadeEngine.undoDraw(game);
+        // Not undoable card by card any more (other series were laid): start the
+        // whole turn over.
+        if (r.pendingObligations.length > 0 && CascadeEngine.canRestartTurn(game))
+            CascadeEngine.restartTurn(game);
         if (r.part === 1) {
             CascadeEngine.drawFromClosedPile(game);
             if (r.ended) {
