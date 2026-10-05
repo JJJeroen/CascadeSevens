@@ -68,7 +68,7 @@ check(
         throw new Error(
           "test setup: expected closed-pile draw to be available",
         );
-      E.drawFromClosedPile(g); // a closed-pile draw ends Part 1 immediately, no separate finishDrawing() needed
+      E.drawFromClosedPile(g); // a closed-pile draw ends Part 1 immediately
       const discardCard = g.round.hands[g.round.current][0];
       E.discard(g, discardCard.id);
     }

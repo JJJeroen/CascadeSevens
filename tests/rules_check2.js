@@ -32,9 +32,6 @@ check("can draw from open row before come-out", () => {
   E.drawFromOpenRow(game, rowCard.id);
   if (game.round.part !== 2)
     throw new Error("a row take should move straight on to Part 2");
-  E.finishDrawing(game); // harmless: the take already moved us on
-  if (game.round.part !== 2)
-    throw new Error("did not stay in part 2 after finishDrawing");
   if (!game.round.pendingObligations.includes(rowCard.id))
     throw new Error("no obligation created");
 });

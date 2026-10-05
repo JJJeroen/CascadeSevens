@@ -49,47 +49,36 @@ check("undoDraw unavailable after a closed-pile draw", () => {
   if (E.canUndoDraw(game))
     throw new Error("should not be undoable — this was a closed-pile draw");
 });
-// Revised 2026-07-27: confirmed against the designer (via a real stuck-
-// player report) that finishDrawing should NOT close the undo window on
-// its own -- a player who clicks "Done drawing" before realizing they're
-// stuck would otherwise be permanently stranded. Undo now survives the
-// Part 1 -> Part 2 transition and reverts it too.
-check(
-  "undoDraw survives finishDrawing and reverts the Part 1/2 transition too",
-  () => {
-    const game = freshGameAtPart1();
-    const rowCard = game.round.openRow[game.round.openRow.length - 1];
-    E.drawFromOpenRow(game, rowCard.id);
-    E.finishDrawing(game);
-    if (game.round.part !== 2)
-      throw new Error("test setup: expected Part 2 after finishDrawing");
-    if (!E.canUndoDraw(game))
-      throw new Error("undo should still be available after finishDrawing");
-    E.undoDraw(game);
-    if (game.round.part !== 1)
-      throw new Error("undo should revert back to Part 1");
-    if (game.round.pendingObligations.length !== 0)
-      throw new Error("obligation should be cleared");
-  },
-);
+// A row take moves straight on to Part 2; undoing it (while nothing else has
+// been done) reverts that and restores the pile.
+check("undoDraw reverts the take and puts the turn back in Part 1", () => {
+  const game = freshGameAtPart1();
+  const rowCard = game.round.openRow[game.round.openRow.length - 1];
+  E.drawFromOpenRow(game, rowCard.id);
+  if (game.round.part !== 2)
+    throw new Error("test setup: a take should move on to Part 2");
+  if (!E.canUndoDraw(game)) throw new Error("undo should be available");
+  E.undoDraw(game);
+  if (game.round.part !== 1) throw new Error("undo should revert to Part 1");
+  if (game.round.pendingObligations.length !== 0)
+    throw new Error("obligation should be cleared");
+  if (!E.canDrawFromClosedPile(game))
+    throw new Error("the pile should be available again");
+});
 check("undoDraw closes once an actual meld action succeeds", () => {
   const game = freshGameAtPart1();
   const rowCard = game.round.openRow[game.round.openRow.length - 1];
   E.drawFromOpenRow(game, rowCard.id);
-  E.finishDrawing(game);
   const hand = game.round.hands[0];
   hand.push(card("K", "S"), card("K", "H"), card("K", "D"));
   E.layNewMeld(game, [{ cardId: "KS" }, { cardId: "KH" }, { cardId: "KD" }]);
   if (E.canUndoDraw(game))
-    throw new Error(
-      "undo should be closed off after a real meld action, even though finishDrawing alone did not close it",
-    );
+    throw new Error("undo should be closed off after a real meld action");
 });
 check("undoDraw unavailable after any other Part 2 action", () => {
   const game = freshGameAtPart1();
   const rowCard = game.round.openRow[game.round.openRow.length - 1];
   E.drawFromOpenRow(game, rowCard.id);
-  E.finishDrawing(game);
   // give the player an unrelated valid meld and lay it (not touching the obligated card)
   const hand = game.round.hands[game.round.current];
   hand.push(card("K", "S"), card("K", "H"), card("K", "D"));

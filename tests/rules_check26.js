@@ -5,20 +5,14 @@
 import { CascadeEngine } from "../docs/engine.js";
 import { CascadeAI } from "../docs/ai.js";
 
-function rngFor(seed) {
-  let s = seed;
-  return () => {
-    s = (s * 9301 + 49297) % 233280;
-    return s / 233280;
-  };
-}
+const rngFor = (seed) => CascadeEngine.seededRng(seed); // the engine's own seeded generator
 
 let turnsChecked = 0;
 let shortTakeBacks = 0;
 
 for (let g = 0; g < 300; g++) {
   const rng = rngFor(g * 17 + 3);
-  const game = CascadeEngine.newGame(g % 2 ? "quick" : "standard");
+  const game = CascadeEngine.newGame(g % 2 ? "quick" : "standard", rng);
   for (let round = 0; round < 5 && !game.gameOver; round++) {
     CascadeEngine.startRound(game, rng);
     let guard = 0;

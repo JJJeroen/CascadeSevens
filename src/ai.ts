@@ -293,23 +293,11 @@ function playPart2(game: Game): void {
       const sets = findCandidateSets(hand, jokersLeft);
       const runs = findCandidateRuns(hand, jokersLeft);
       const candidates = [...sets, ...runs].sort((a, b) => b.value - a.value);
-      const fourKind = sets.find((s) => s.slots.length === 4);
-      if (fourKind) {
-        try {
-          CascadeEngine.layNewMeld(game, fourKind.slots);
-          continue;
-        } catch {
-          /* would empty the hand — fall through to the value-based attempt below */
-        }
-      }
       // Try to reach 40 with as few melds as possible.
-      let acc = r.comeOutAccum[r.current];
       let played = false;
       for (const cand of candidates) {
-        if (acc >= 40) break;
         try {
           CascadeEngine.layNewMeld(game, cand.slots);
-          acc += cand.value;
           played = true;
           break; // re-evaluate hand/jokers fresh each loop
         } catch {
