@@ -24,23 +24,35 @@ function freshGameAtPart1() {
 }
 
 check(
-  "discard: the row-take obligation card may be discarded straight back instead of melded",
+  "discard: the owed cascade card can NOT be discarded back -- it must be laid on the table (decision 25)",
   () => {
     const game = freshGameAtPart1();
+    game.round.comeOut[0] = true; // so the 27-point set doesn't need 40
     game.round.openRow = [card("9", "H")];
+    game.round.hands[0] = [
+      card("9", "S"),
+      card("9", "D"),
+      card("2", "C"),
+      card("4", "C"),
+    ];
     E.drawFromOpenRow(game, "9H");
     if (game.round.pendingObligations[0] !== "9H")
       throw new Error("9H should be the pending obligation");
     if (game.round.rowObligationCardId !== "9H")
       throw new Error("rowObligationCardId should be set to 9H");
-    E.finishDrawing(game);
-    E.discard(game, "9H");
+    let threw = false;
+    try {
+      E.discard(game, "9H");
+    } catch {
+      threw = true;
+    }
+    if (!threw) throw new Error("discarding the owed card should be refused");
+    if (game.round.pendingObligations.length !== 1)
+      throw new Error("the obligation must still be outstanding");
+    E.layNewMeld(game, [{ cardId: "9S" }, { cardId: "9D" }, { cardId: "9H" }]);
     if (game.round.pendingObligations.length !== 0)
-      throw new Error("obligation should be cleared by the discard");
-    if (game.round.rowObligationCardId !== null)
-      throw new Error("rowObligationCardId should be cleared too");
-    if (!game.round.openRow.some((c) => c.id === "9H"))
-      throw new Error("9H should be back in the open row");
+      throw new Error("laying 9H should clear the obligation");
+    E.discard(game, "2C"); // now the turn can end
   },
 );
 
@@ -50,7 +62,6 @@ check(
     const game = freshGameAtPart1();
     game.round.openRow = [card("9", "H")];
     E.drawFromOpenRow(game, "9H");
-    E.finishDrawing(game);
     const otherCardId = game.round.hands[game.round.current][0].id;
     let threw = false;
     try {
@@ -104,23 +115,22 @@ check(
 );
 
 check(
-  "canProceedToDiscard: true when only the row obligation remains, false when a meld-only obligation remains",
+  "canProceedToDiscard: false while ANY obligation remains (row take or joker), true once all are laid",
   () => {
     const game = freshGameAtPart1();
     game.round.openRow = [card("9", "H")];
     E.drawFromOpenRow(game, "9H");
-    E.finishDrawing(game);
-    if (!E.canProceedToDiscard(game))
-      throw new Error(
-        "should be able to proceed to discard (the row card itself is dischargeable)",
-      );
+    if (E.canProceedToDiscard(game))
+      throw new Error("the owed cascade card blocks the discard");
 
     game.round.pendingObligations = ["SOME_JOKER_ID"];
     game.round.rowObligationCardId = null;
     if (E.canProceedToDiscard(game))
-      throw new Error(
-        "should NOT be able to proceed while a meld-only obligation remains",
-      );
+      throw new Error("a meld-only obligation blocks the discard");
+
+    game.round.pendingObligations = [];
+    if (!E.canProceedToDiscard(game))
+      throw new Error("nothing owed: should be able to discard");
   },
 );
 
@@ -143,7 +153,7 @@ check(
 );
 
 check(
-  "a new row-take supersedes the previous one's discard-eligibility, not just its obligation id",
+  "a new row-take supersedes the previous one's obligation: only the newest bottom card is owed",
   () => {
     const game = freshGameAtPart1();
     game.round.openRow = [card("3", "C"), card("9", "H")];
@@ -157,22 +167,18 @@ check(
     ) {
       throw new Error("pendingObligations should contain only 3C");
     }
-    // 9H is now just an ordinary hand card -- discarding it should be illegal
-    // (3C is the only thing dischargeable), and discarding 3C should work.
-    E.finishDrawing(game);
-    let threw = false;
-    try {
-      E.discard(game, "9H");
-    } catch (e) {
-      threw = true;
+    // 9H is now just an ordinary hand card. Nothing can be discarded until
+    // 3C (the newest take's bottom card) is laid.
+    for (const id of ["9H", "3C"]) {
+      let threw = false;
+      try {
+        E.discard(game, id);
+      } catch (e) {
+        threw = true;
+      }
+      if (!threw)
+        throw new Error(`${id} must not be discardable while 3C is owed`);
     }
-    if (!threw)
-      throw new Error(
-        "9H is no longer the obligation and should not be freely discardable",
-      );
-    E.discard(game, "3C");
-    if (game.round.pendingObligations.length !== 0)
-      throw new Error("3C should have cleared the obligation");
   },
 );
 
@@ -182,7 +188,6 @@ check(
     const game = freshGameAtPart1();
     game.round.openRow = [card("9", "H")];
     E.drawFromOpenRow(game, "9H");
-    E.finishDrawing(game);
     game.round.comeOut[game.round.current] = true;
     if (!E.canStartRearrange(game))
       throw new Error(
@@ -202,7 +207,6 @@ check(
     const game = freshGameAtPart1();
     game.round.openRow = [card("9", "H")];
     E.drawFromOpenRow(game, "9H");
-    E.finishDrawing(game);
     game.round.comeOut[game.round.current] = true;
     game.round.hands[game.round.current].push(card("7", "H"), card("8", "H"));
     E.startRearrange(game);
@@ -234,7 +238,6 @@ check(
     const game = freshGameAtPart1();
     game.round.openRow = [card("9", "H")];
     E.drawFromOpenRow(game, "9H");
-    E.finishDrawing(game);
     game.round.comeOut[game.round.current] = true;
     game.round.tableau.push({
       id: "m1",
@@ -263,12 +266,14 @@ check(
     }
     if (game.round.rowObligationCardId !== "9H")
       throw new Error("rowObligationCardId should still be 9H");
-    // ...and it should still be resolvable afterward, e.g. by discarding it back.
-    E.discard(game, "9H");
-    if (game.round.pendingObligations.length !== 0)
-      throw new Error(
-        "should still be able to discard 9H back after the session",
-      );
+    // ...and it still can't be discarded: it has to be laid.
+    let threw = false;
+    try {
+      E.discard(game, "9H");
+    } catch {
+      threw = true;
+    }
+    if (!threw) throw new Error("9H must not be discardable, it is still owed");
   },
 );
 

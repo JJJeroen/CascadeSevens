@@ -166,7 +166,7 @@ check(
 );
 
 check(
-  "AI resolves a genuinely unmeldable row obligation by discarding it back, not by stalling or throwing",
+  "AI undoes a pickup whose owed card it cannot lay, and draws from the pile instead (no stall, no discard-back)",
   () => {
     const game = E.newGame("standard", () => 0.1);
     E.startRound(game, () => 0.5);
@@ -174,26 +174,52 @@ check(
     E.turn0Decline(game);
     game.round.current = 1;
     game.round.comeOut[1] = true;
-    // Hand has only 4C -- taking 5C from the row leaves [4C,5C], nowhere
-    // near enough to form any valid run or set. Simulate having already
-    // drawn it (skip straight to Part 2 with the obligation already set,
-    // matching what drawFromOpenRow itself would have produced).
     game.round.hands[1] = [
       { id: "4C", rank: "4", suit: "C" },
-      { id: "5C", rank: "5", suit: "C" },
+      { id: "KD", rank: "K", suit: "D" },
     ];
-    game.round.part = 2;
-    game.round.pendingObligations = ["5C"];
-    game.round.rowObligationCardId = "5C";
-    game.round.openRow = [{ id: "XX", rank: "9", suit: "D" }];
+    game.round.openRow = [{ id: "5C", rank: "5", suit: "C" }];
+    // Take 5C the way the AI would have; nothing in hand can lay it.
+    E.drawFromOpenRow(game, "5C");
+    const pileBefore = game.round.closedPile.length;
     CascadeAI.takeTurn(game, { onStateChanged: () => {} });
     if (game.round.pendingObligations.length !== 0)
-      throw new Error(
-        "obligation should be resolved one way or another, not left dangling",
-      );
-    const rowHas5C = game.round.openRow.some((c) => c.id === "5C");
-    if (!rowHas5C)
-      throw new Error("5C should have been discarded back to the open row");
+      throw new Error("nothing may still be owed after the turn");
+    if (!game.round.openRow.some((c) => c.id === "5C"))
+      throw new Error("5C should be back on the cascade (pickup undone)");
+    if (game.round.closedPile.length !== pileBefore - 1)
+      throw new Error("the AI should have drawn from the pile instead");
+    if (game.round.current !== 0)
+      throw new Error("the AI's turn should be over");
+  },
+);
+
+check(
+  "AI that cannot reach 40 takes its short melds back, undoes the pickup that made a card owed, and still ends its turn",
+  () => {
+    const game = E.newGame("standard", () => 0.1);
+    E.startRound(game, () => 0.5);
+    E.turn0Decline(game);
+    E.turn0Decline(game);
+    game.round.current = 1;
+    game.round.hands[1] = [
+      { id: "9S", rank: "9", suit: "S" },
+      { id: "9D", rank: "9", suit: "D" },
+      { id: "2C", rank: "2", suit: "C" },
+      { id: "3D", rank: "3", suit: "D" },
+      { id: "KH", rank: "K", suit: "H" },
+    ];
+    game.round.openRow = [{ id: "9H", rank: "9", suit: "H" }];
+    E.drawFromOpenRow(game, "9H"); // 9-9-9 is only 15 points: under the 40 to come out
+    CascadeAI.takeTurn(game, { onStateChanged: () => {} });
+    if (game.round.pendingObligations.length !== 0)
+      throw new Error("nothing may still be owed after the turn");
+    if (game.round.current !== 0)
+      throw new Error("the AI's turn should be over");
+    if (game.round.tableau.length !== 0)
+      throw new Error("no under-40 series may stay on the table");
+    if (!game.round.openRow.some((c) => c.id === "9H"))
+      throw new Error("9H should be back on the cascade (pickup undone)");
   },
 );
 
