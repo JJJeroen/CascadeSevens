@@ -36,18 +36,24 @@ function buildDeck() {
     deck.push({ id: "JOKER-2", rank: "JOKER", suit: null });
     return deck;
 }
-// A small deterministic LCG seeded by an integer -- lets a whole deal
+// A small deterministic PRNG (mulberry32) seeded by an integer -- lets a whole deal
 // (shuffle + starter coin-flip) be reproduced later from just the seed
 // value, e.g. to replay a disputed game (#16). Not cryptographically
 // strong; only needs to be deterministic and reasonably well-distributed
 // for shuffling. AI play has no randomness of its own (see ai.ts), so a
 // reproduced deal plus the same sequence of actions reproduces the whole
 // game, not just the initial hands.
+// Any finite number is a valid seed: it is floored and wrapped to 32 bits, so
+// negative or huge seeds work (the old LCG returned values outside [0, 1) for
+// negative seeds, which dealt undefined cards, and had only 233,280 states).
 function seededRng(seed) {
-    let s = seed;
+    let s = Math.floor(seed) >>> 0;
     return () => {
-        s = (s * 9301 + 49297) % 233280;
-        return s / 233280;
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 }
 function shuffle(deck, rng = Math.random) {
@@ -168,12 +174,16 @@ function turn0Accept(game, replacementCardId) {
     if (takerIdx === null)
         throw new Error("Turn 0 closed.");
     const hand = r.hands[takerIdx];
-    const takenCard = r.openRow.pop();
-    hand.push(takenCard);
-    const ci = findCard(hand, replacementCardId);
-    if (ci === -1)
+    // Validate before touching any state, so a bad id leaves the game as it was.
+    const starter = r.openRow[r.openRow.length - 1];
+    if (!starter)
+        throw new Error("There is no starter card to take.");
+    if (!hand.some((c) => c.id === replacementCardId) &&
+        starter.id !== replacementCardId)
         throw new Error("Replacement card not in hand.");
-    const [placed] = hand.splice(ci, 1);
+    r.openRow.pop();
+    hand.push(starter);
+    const [placed] = hand.splice(findCard(hand, replacementCardId), 1);
     r.openRow.push(placed);
     t.lastAcceptor = takerIdx;
     logMsg(game, `Player ${takerIdx + 1} took the starter card and swapped in ${placed.rank}${placed.suit || ""}.`);
@@ -217,7 +227,7 @@ function beginNormalRotation(game) {
 // laying series too (take, lay, take again). The pile stays locked.
 function canDrawFromRow(game) {
     const r = game.round;
-    if (r.openRow.length === 0)
+    if (r.ended || r.openRow.length === 0)
         return false;
     if (r.part === 1)
         return true;
@@ -225,14 +235,16 @@ function canDrawFromRow(game) {
 }
 function canDrawFromClosedPile(game) {
     const r = game.round;
-    return r.part === 1 && r.rowDrawsThisPart1 === 0;
+    return r.part === 1 && !r.ended && r.rowDrawsThisPart1 === 0;
 }
 function drawFromClosedPile(game) {
     const r = game.round;
     if (!canDrawFromClosedPile(game)) {
-        throw new Error(r.part !== 1
-            ? "You can only do that while drawing."
-            : "Already took from the cascade this turn — the pile is no longer available.");
+        throw new Error(r.ended
+            ? "The round has ended."
+            : r.part !== 1
+                ? "You can only do that while drawing."
+                : "Already took from the cascade this turn — the pile is no longer available.");
     }
     if (r.closedPile.length === 0) {
         endRoundPileEmpty(game);
@@ -1266,6 +1278,12 @@ function discard(game, cardId) {
     logMsg(game, `Player ${r.current + 1} discarded ${card.rank}${card.suit || ""}${isObligated ? " (the card taken from the cascade, back on the cascade)" : ""}.`);
     if (hand.length === 0) {
         endRoundHandOut(game, r.current);
+        return;
+    }
+    // Empty closed pile (DESIGN decision 3): the round ends when the player who
+    // drew the last card has finished their turn.
+    if (r.closedPile.length === 0) {
+        endRoundPileEmpty(game);
         return;
     }
     advanceTurn(game);

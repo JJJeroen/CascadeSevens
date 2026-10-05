@@ -360,6 +360,28 @@ async function testDoneDrawing(page, vp) {
     );
 }
 
+// A targeted series that disappears must not keep "Pull my cards" enabled.
+async function testStaleTarget(page, vp) {
+  const tag = `${vp.name} stale-target`;
+  const q = (js) => page.evalJs(js);
+  await q(`(() => {
+    const r = window.__cascadeTest.getGame().round;
+    r.part = 2; r.current = 0; r.ended = false; r.comeOut[0] = true; r.rearrange = null;
+    window.__t.setHand(5);
+    window.__t.setTableau([window.__t.run("m1", "H", 0, 4)]);
+    document.querySelector("#tableau .meld").click();
+  })()`);
+  const shown = () =>
+    q(
+      `(() => { const b = document.querySelector("#pullMeldBtn"); return !b.hidden; })()`,
+    );
+  if (!(await shown()))
+    fail(`${tag}: precondition: Pull should show while a series is targeted`);
+  await q(`window.__t.setTableau([])`);
+  if (await shown())
+    fail(`${tag}: Pull must hide once the targeted series is gone`);
+}
+
 // Opponent's come-out progress next to the round label.
 async function testOppStatus(page, vp) {
   const tag = `${vp.name} opp-status`;
@@ -836,6 +858,7 @@ async function main() {
       await testTurn0(page, vp);
       await testBlockedPullHint(page, vp);
       await testJokerObligation(page, vp);
+      await testStaleTarget(page, vp);
       await testRoundEnd(page, vp); // leaves the round marked ended...
       await testMovablePopup(page, vp); // ...which this one needs
     }

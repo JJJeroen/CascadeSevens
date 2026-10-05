@@ -355,6 +355,13 @@ function scheduleIfAITurn(): void {
 
 function render(): void {
   if (!game) return;
+  // A targeted series can vanish (dissolved by a pull, or by the AI): drop the
+  // stale target so the Add/Pull buttons don't stay enabled for nothing.
+  if (
+    targetedMeldId &&
+    !game.round?.tableau.some((m) => m.id === targetedMeldId)
+  )
+    targetedMeldId = null;
   // Saved total, plus what this round's melds on the table are worth so far.
   ([0, 1] as const).forEach((i) => {
     const pending = (game as Game).round?.ended
@@ -1153,6 +1160,12 @@ function resolveDrop(ds: DragState): void {
     if (target?.kind === "meld" && target.meldId === ds.source.meldId) return; // dropped back in place
     if (!ds.source.ownsCard) {
       showError("You don't have any cards of your own in this series to pull.");
+      return;
+    }
+    // Only a drop on the hand takes the card back. Letting go anywhere else
+    // (empty space, another series, the cascade) snaps it back.
+    if (target?.kind !== "hand") {
+      if (target) showInfo("Drop the card on your hand to take it back.");
       return;
     }
     try {
