@@ -278,20 +278,12 @@ function playPart2(game: Game): void {
         (CascadeEngine.hasComeOut(game) &&
           tryResolveObligationViaRearrange(game, cardId, hand));
       if (!placed) {
-        // Genuinely stuck — shouldn't happen given canResolvePickup/
+        // Genuinely stuck -- shouldn't happen given canResolvePickup/
         // canReplayJokerAfterSwap, but those are heuristic candidate
-        // searches, not exhaustive proofs. If this is the row-take's
-        // card specifically, the correct resolution is simply
-        // discarding it back (confirmed 2026-07-27) rather than melding
-        // it — so just break here and let takeTurn's normal end-of-turn
-        // discard handle it (pickDiscard prioritizes an outstanding row
-        // obligation). That keeps whatever else was already melded or
-        // kept from the scoop, unlike a full undo which would sacrifice
-        // all of it just to get rid of the one unmeldable card. Only a
-        // genuinely non-discardable obligation (a reclaimed joker from
-        // a swap) falls back to undoing the pickup that created it.
-        if (cardId !== r.rowObligationCardId && CascadeEngine.canUndoDraw(game))
-          CascadeEngine.undoDraw(game);
+        // searches, not exhaustive proofs. An owed card can't be discarded
+        // (DESIGN decision 25), so the way out is undoing the pickup that
+        // created it; takeTurn then draws from the pile instead.
+        if (CascadeEngine.canUndoDraw(game)) CascadeEngine.undoDraw(game);
         break;
       }
       continue;
@@ -511,7 +503,7 @@ function tryResolveObligationViaRearrange(
       // The pull already succeeded and can't be cleanly undone here, but
       // that's still a legal state (the cards just sit in hand) -- report
       // failure and let the caller's existing fallback (undo the draw, or
-      // leave a row obligation for discard-back) take over from there.
+      // undo the draw) take over from there.
       return false;
     }
   }
@@ -551,18 +543,6 @@ function tryLayMeldContaining(
 
 function pickDiscard(game: Game): string {
   const r = game.round as Round;
-  // If a row-take obligation is still outstanding at this point, it MUST
-  // be the card discarded -- canProceedToDiscard() only allows discarding
-  // at all once every OTHER obligation is cleared, and discard() itself
-  // rejects any other card while this one is still unresolved. It's
-  // exactly this obligation's own discard-back resolution (2026-07-27),
-  // not a free choice of what to shed.
-  if (
-    r.rowObligationCardId &&
-    r.pendingObligations.includes(r.rowObligationCardId)
-  ) {
-    return r.rowObligationCardId;
-  }
   const hand = r.hands[r.current];
   const nonJokers = hand.filter((c) => c.rank !== "JOKER");
   const pool = nonJokers.length ? nonJokers : hand;
@@ -591,15 +571,8 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
     const draw = pickDraw(game);
     if (draw.source === "row") {
       // The AI keeps it simple and never repeats a row-take (§2.3 allows
-      // it, but one draw is enough for this heuristic) — it must now
-      // explicitly finish drawing, since a row-take no longer auto-
-      // advances to Part 2 on its own.
+      // it, but one draw is enough for this heuristic).
       CascadeEngine.drawFromOpenRow(game, draw.cardId);
-      if (r.ended) {
-        callbacks.onStateChanged();
-        return;
-      }
-      CascadeEngine.finishDrawing(game);
     } else {
       CascadeEngine.drawFromClosedPile(game);
     }
@@ -620,6 +593,31 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
   // unable to end the turn.
   if (CascadeEngine.comeOutShortfall(game) > 0) {
     CascadeEngine.takeBackUnqualifiedMelds(game);
+  }
+  // A card owed from a cascade take can't be discarded (DESIGN decision 25).
+  // If it is still owed here (it couldn't be laid, or a take-back above made
+  // it owed again), undo the pickup and draw from the pile instead.
+  if (r.pendingObligations.length > 0 || r.part === 1) {
+    while (r.pendingObligations.length > 0 && CascadeEngine.canUndoDraw(game))
+      CascadeEngine.undoDraw(game);
+    // Not undoable card by card any more (other series were laid): start the
+    // whole turn over.
+    if (r.pendingObligations.length > 0 && CascadeEngine.canRestartTurn(game))
+      CascadeEngine.restartTurn(game);
+    if (r.part === 1) {
+      CascadeEngine.drawFromClosedPile(game);
+      if (r.ended) {
+        callbacks.onStateChanged();
+        return;
+      }
+      playPart2(game);
+      if (r.ended) {
+        callbacks.onStateChanged();
+        return;
+      }
+      if (CascadeEngine.comeOutShortfall(game) > 0)
+        CascadeEngine.takeBackUnqualifiedMelds(game);
+    }
   }
   callbacks.onStateChanged();
 

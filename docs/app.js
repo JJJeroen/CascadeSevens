@@ -484,16 +484,18 @@ function renderOpenRow() {
                                 showError(errMsg(e));
                             }
                         };
-                        // Only worth a warning when the pickup drags extra cards
-                        // along: a lone card can simply be discarded back. And the
-                        // card may also go on the table (added to an existing
-                        // series), not just into a new series from the hand.
+                        // The bottom card must go on the table this turn (it can no
+                        // longer be discarded back), so warn whenever it doesn't
+                        // seem to fit: a series from the hand + scoop, or an
+                        // existing series on the table.
                         const extra = scoopCards.length - 1;
-                        if (extra >= 1 &&
-                            !CascadeAI.canResolvePickup(hand, scoopCards, card.id) &&
+                        if (!CascadeAI.canResolvePickup(hand, scoopCards, card.id) &&
                             !canAddToTableAfterTake(g, card)) {
-                            showDialog("Take this card anyway?", `Taking this card will also take ${extra} more ${extra === 1 ? "card" : "cards"}, and ${cardText(card)} must go on the table this turn (or be discarded back) — ` +
-                                `but it doesn't seem to fit a series from your hand or an existing series on the table.`, [
+                            showDialog("Take this card anyway?", `${cardText(card)} must go on the table this turn` +
+                                (extra >= 1
+                                    ? `, and taking it also takes ${extra} more ${extra === 1 ? "card" : "cards"} — `
+                                    : " — ") +
+                                `but it doesn't seem to fit a series from your hand or an existing series on the table. You can undo the pickup if you get stuck.`, [
                                 { label: "Cancel", secondary: true },
                                 { label: "Take it anyway", onClick: take },
                             ]);
@@ -1233,20 +1235,18 @@ function renderControls() {
     const obligEl = $("obligationLabel");
     if (isHumanTurn && !rearranging && r.pendingObligations.length > 0) {
         obligEl.hidden = false;
-        // The row-take's bottom card may be discarded straight back instead of
-        // melded; any other obligation (a reclaimed joker from a swap) must
-        // still be melded. Label each accordingly rather than a blanket "must
-        // meld" that's no longer accurate for the row card.
+        // Every owed card must be laid on the table this turn; say which one is
+        // the cascade card and which is a reclaimed joker.
         const parts = r.pendingObligations.map((id) => {
             const c = hand.find((h) => h.id === id);
             const label = c ? cardText(c) : id;
             return id === r.rowObligationCardId
-                ? `${label} (lay it in a series or discard it back)`
+                ? `${label} (must go on the table)`
                 : c?.rank === "JOKER"
                     ? "Joker (you must use it this turn)"
                     : `${label} (must lay it in a series)`;
         });
-        obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : ""}`;
+        obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : CascadeEngine.canRestartTurn(g) ? ' (stuck? tap "Start turn over")' : ""}`;
     }
     else {
         obligEl.hidden = true;
@@ -1276,6 +1276,13 @@ function renderControls() {
     // trip through an error dialog for the obvious case).
     $("drawPileBtn").disabled =
         rearranging || !(isHumanTurn && CascadeEngine.canDrawFromClosedPile(g));
+    // Only offered while something is still owed: that is the state a player
+    // can get stuck in (an owed card that can't be laid can't be discarded).
+    $("restartTurnBtn").disabled =
+        rearranging ||
+            !(isHumanTurn &&
+                CascadeEngine.canRestartTurn(g) &&
+                r.pendingObligations.length > 0);
     $("undoDrawBtn").disabled =
         rearranging || !(isHumanTurn && CascadeEngine.canUndoDraw(g));
     $("clearSelectionBtn").disabled =
@@ -1299,15 +1306,8 @@ function renderControls() {
                 targetedHasJoker);
     $("pullMeldBtn").disabled =
         rearranging || !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
-    // Mirrors engine.ts's discard() legality exactly: every obligation OTHER
-    // than the selected card must already be cleared, and if the selected
-    // card IS itself obligated, it must be the row-take card specifically
-    // (discard-eligible) rather than a reclaimed joker (meld-only).
-    const selectedId = selected.length === 1 ? selected[0].id : null;
-    const canDiscardSelected = selectedId !== null &&
-        !r.pendingObligations.some((id) => id !== selectedId) &&
-        (!r.pendingObligations.includes(selectedId) ||
-            selectedId === r.rowObligationCardId);
+    // Mirrors engine.ts's discard() legality: nothing may still be owed.
+    const canDiscardSelected = selected.length === 1 && r.pendingObligations.length === 0;
     $("discardBtn").disabled =
         rearranging || !(isHumanTurn && r.part === 2 && canDiscardSelected);
     $("startRearrangeBtn").disabled =
@@ -1315,6 +1315,7 @@ function renderControls() {
     // Contextual action bar: only the actions that currently apply are shown.
     for (const id of [
         "layMeldBtn",
+        "restartTurnBtn",
         "addToMeldBtn",
         "swapJokerBtn",
         "pullMeldBtn",
@@ -1368,6 +1369,25 @@ $("drawPileBtn").addEventListener("click", () => {
     catch (e) {
         showError(errMsg(e));
     }
+});
+$("restartTurnBtn").addEventListener("click", () => {
+    showDialog("Start your turn over?", "Everything you did this turn is put back (the cards you took, the series you laid), and you draw again.", [
+        { label: "Cancel", secondary: true },
+        {
+            label: "Start over",
+            onClick: () => {
+                try {
+                    CascadeEngine.restartTurn(game);
+                    selectedHandCardIds.clear();
+                    targetedMeldId = null;
+                    afterHumanAction();
+                }
+                catch (e) {
+                    showError(errMsg(e));
+                }
+            },
+        },
+    ]);
 });
 $("undoDrawBtn").addEventListener("click", () => {
     try {
@@ -1640,7 +1660,7 @@ function updateBalloon(g, r, isHumanTurn, rearranging, hand) {
             const c = hand.find((h) => h.id === id);
             const label = c ? cardText(c) : id;
             return id === r.rowObligationCardId
-                ? `lay ${label} in a series or discard it back`
+                ? `put ${label} on the table`
                 : c?.rank === "JOKER"
                     ? "use this joker in this turn"
                     : `lay ${label} in a series`;
@@ -1757,7 +1777,7 @@ $("menuHelpBtn").addEventListener("click", () => {
     // game ("series" for a laid set or run).
     showDialog("How to play", [
         "Each turn: draw, lay series on the table, then discard.",
-        "Draw: tap the pile for its top card, or tap a card in the cascade to take it and every card on top of it. You can lay series and then take more from the cascade, as long as you did not draw from the pile.",
+        "Draw: tap the pile for its top card, or tap a card in the cascade to take it and every card on top of it. The card at the bottom of what you took must go on the table this turn. You can lay series and then take more from the cascade, as long as you did not draw from the pile.",
         "Lay: put 3 or more cards on the table as a series (the same number in different suits, or a run in one suit). To come out, the series you lay in one turn must be worth 40 points or more (ace 25, 10-K 10, 2-9 5, joker 50). If they are worth less, you can lay more or take them back.",
         "Moving cards: drag back a series card you laid yourself (an end card of a run, or any card that leaves a valid series). To regroup any card on the table, even the AI's, use Rearrange… as long as every series is valid when you commit.",
         "Points: the coloured bar at the bottom of each card shows who scores it: orange for you, blue for the AI (the same colours as the scores). If you swap a joker out of the AI's series, your replacement card stays with the AI; the joker is yours to play.",
