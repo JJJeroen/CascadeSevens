@@ -1,5 +1,6 @@
 // Critical-tier: pile-empty scoring (DESIGN.md §3 decision 3). The closed
-// pile running out ends the round immediately -- a DIFFERENT scoring shape
+// pile running out ends the round (as of 2026-10-05: when the player who drew
+// the last card finishes their turn; see rules_check31.js) -- a DIFFERENT scoring shape
 // than a normal handout win: nobody gets the +50 bonus, and BOTH players are
 // penalized for their own remaining hand, not just a "loser." Confirmed by
 // grep before writing this file: zero references to endRoundPileEmpty or
@@ -87,7 +88,7 @@ check(
 );
 
 check(
-  "pile-empty is reachable only via a draw attempt on an empty closed pile, not any other way",
+  "drawing a card from a pile that still has cards does not end the round",
   () => {
     const game = freshGameAtPart1();
     const r = game.round;
