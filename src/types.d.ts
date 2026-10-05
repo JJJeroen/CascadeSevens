@@ -89,8 +89,11 @@ export interface ComeOutAttempt {
 }
 
 // What the current player's turn looked like just before their first cascade
-// take, so a stuck turn can be started over (DESIGN decision 25).
+// take, or just AFTER a pile draw (never before it: the drawn card has been
+// seen), so a stuck turn can be started over (DESIGN decision 25).
 export interface TurnStart {
+  part: 1 | 2; // where the player returns to
+
   hand: Card[];
   openRow: Card[];
   tableau: Meld[];
