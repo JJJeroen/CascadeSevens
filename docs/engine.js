@@ -1093,6 +1093,7 @@ function commitRearrange(game) {
     const rr = r.rearrange;
     const groupIds = Object.keys(rr.groups);
     const resolvedByGroup = {};
+    const untouchedByGroup = {};
     const problems = [];
     for (const gid of groupIds) {
         const cardIds = rr.groups[gid];
@@ -1103,6 +1104,17 @@ function commitRearrange(game) {
                 cardIds,
                 error: "A series needs at least 3 cards.",
             });
+            continue;
+        }
+        // A group with exactly the cards of a series already on the table is
+        // untouched: keep that series as it is. Re-solving it could move a
+        // joker to a different card (the solver prefers the low end of a run),
+        // which would let a rearrange silently change what the opponent's joker
+        // stands for.
+        const untouched = r.tableau.find((m) => m.slots.length === cardIds.length &&
+            m.slots.every((sl) => cardIds.includes(sl.card.id)));
+        if (untouched) {
+            untouchedByGroup[gid] = untouched;
             continue;
         }
         const resolved = resolveGroup(cards);
@@ -1138,6 +1150,9 @@ function commitRearrange(game) {
     if (problems.length > 0)
         return { ok: false, problems };
     const newTableau = groupIds.map((gid) => {
+        const kept = untouchedByGroup[gid];
+        if (kept)
+            return { ...kept, id: gid };
         const resolved = resolvedByGroup[gid];
         return {
             id: gid,
