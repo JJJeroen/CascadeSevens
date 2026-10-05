@@ -140,7 +140,6 @@ function startRound(game: Game, rng: () => number = Math.random): Game {
     rowDrawsThisPart1: 0, // repeat open-row takes within Part 1 (§2.3, revised 2026-07-26); resets each turn
     comeOutAccum: [0, 0], // points of new melds laid THIS turn toward the 40-point come-out bar (§2.4, revised 2026-10-03: single turn, no carry-over)
     comeOutAttempt: null, // snapshot for taking this turn's under-40 melds back
-    comeOutMetThisTurn: false,
     log: [],
     ended: false,
     endReason: null,
@@ -260,8 +259,8 @@ function beginNormalRotation(game: Game): void {
 // for the rest of this turn; only the bottom card of the MOST RECENT
 // row-take is a binding "must meld" obligation — an earlier row-take's
 // obligation is superseded, not accumulated, once another row-take
-// happens. The player explicitly ends Part 1 via finishDrawing() once
-// they're done (only reachable after at least one draw).
+// happens. (Since 2026-10-04 a row-take moves straight on to Part 2 and
+// further takes stay possible there -- see canDrawFromRow below.)
 
 // Added 2026-10-04 (DESIGN.md decision 24, requested by Tommer): once a
 // player has taken from the cascade this turn they may keep taking after
@@ -347,23 +346,6 @@ function drawFromOpenRow(game: Game, cardId: string): void {
   r.comeOutAttempt?.laterTakes.push(r.lastDraw);
 }
 
-// The deliberate step from Part 1 into Part 2, once the player is done
-// drawing (possible only after at least one open-row take — a closed-pile
-// draw already transitions straight to Part 2 on its own).
-function canFinishDrawing(game: Game): boolean {
-  const r = game.round as Round;
-  return r.part === 1 && r.rowDrawsThisPart1 > 0;
-}
-
-function finishDrawing(game: Game): void {
-  const r = game.round as Round;
-  if (r.part === 2 && r.rowDrawsThisPart1 > 0) return; // a take already moved us on
-  if (!canFinishDrawing(game))
-    throw new Error("Nothing to finish — draw first.");
-  r.part = 2;
-  // lastDraw deliberately survives this transition — see canUndoDraw.
-}
-
 // Last-resort escape for a stuck turn (DESIGN decision 25): an owed cascade
 // card can't be discarded, and once other series are laid the pickup can no
 // longer be undone card by card. This puts the whole turn back to just before
@@ -400,10 +382,7 @@ function restartTurn(game: Game): void {
 // doing it anyway and then discovering they're stuck. This is the escape
 // hatch: undo the most recent row-take, provided no *meld* action has
 // happened since (another row-take, or any Part 2 meld/add/swap/pull all
-// close the window by clearing lastDraw). Moving from Part 1 into Part 2
-// via finishDrawing does NOT close it on its own — that would strand a
-// player who clicks "Done drawing" before realizing they're stuck, which
-// is exactly the scenario this escape hatch exists for.
+// close the window by clearing lastDraw).
 function canUndoDraw(game: Game): boolean {
   const r = game.round as Round;
   return !!r.lastDraw && r.lastDraw.source === "row";
@@ -414,7 +393,7 @@ function undoDraw(game: Game): void {
   if (!canUndoDraw(game)) throw new Error("Nothing to undo.");
   const draw = r.lastDraw as NonNullable<Round["lastDraw"]>;
   returnTakeToRow(r, draw);
-  r.part = draw.partBefore; // reverts finishDrawing too, if it had already happened
+  r.part = draw.partBefore; // back to where the player was before this take
   r.lastDraw = draw.previous; // step back: the take before this one is undoable next
   const later = r.comeOutAttempt?.laterTakes;
   if (later) {
@@ -1605,8 +1584,6 @@ export const CascadeEngine = {
   canDrawFromClosedPile,
   drawFromClosedPile,
   drawFromOpenRow,
-  canFinishDrawing,
-  finishDrawing,
   canUndoDraw,
   undoDraw,
   canRestartTurn,

@@ -126,7 +126,6 @@ export interface Round {
   comeOutAccum: [number, number];
   // What to restore if the player takes this turn's under-40 melds back.
   comeOutAttempt: ComeOutAttempt | null;
-  comeOutMetThisTurn: boolean;
   log: string[];
   ended: boolean;
   endReason: EndReason | null;

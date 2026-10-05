@@ -77,19 +77,11 @@ check("only the most recent row draw is the binding obligation", () => {
     );
 });
 
-check(
-  "a row draw moves straight to Part 2; finishDrawing is a harmless no-op",
-  () => {
-    const game = freshGameAtPart1([card("9", "H")]);
-    if (E.canFinishDrawing(game))
-      throw new Error("should not be able to finish before any draw");
-    E.drawFromOpenRow(game, "9H");
-    if (E.canFinishDrawing(game))
-      throw new Error("nothing left to finish: a row draw moves on to Part 2");
-    E.finishDrawing(game); // harmless no-op
-    if (game.round.part !== 2) throw new Error("should stay in Part 2");
-  },
-);
+check("a row draw moves straight to Part 2", () => {
+  const game = freshGameAtPart1([card("9", "H")]);
+  E.drawFromOpenRow(game, "9H");
+  if (game.round.part !== 2) throw new Error("should be in Part 2");
+});
 
 check(
   "undo restores closed-pile availability if it was the only row draw",
