@@ -20,6 +20,36 @@ interface Candidate {
   containsRank?: RealRank;
 }
 
+// --- Difficulty levels -----------------------------------------------------
+// A level is a small policy table; the move generation below is shared. What
+// each switch does (AI-vs-AI tournaments, seeded, seats swapped; DESIGN.md §5.2):
+//  - discard "highest": throw away the highest-point card (the original AI).
+//  - discard "keep": throw away the card that helps the hand least.
+//  - discard "deny": "keep", plus avoid handing the opponent a card their
+//    known/likely hand or the table can use.
+//  - swapJokers: reclaim jokers from series on the table.
+//  - minTakeScore: only take from the cascade when the scoop is worth this much.
+export type AILevel = "novice" | "intermediate" | "hard";
+export const AI_LEVELS: AILevel[] = ["novice", "intermediate", "hard"];
+
+interface Policy {
+  discard: "highest" | "keep" | "deny";
+  swapJokers: boolean;
+  minTakeScore: number | null;
+}
+
+const POLICIES: Record<AILevel, Policy> = {
+  novice: { discard: "highest", swapJokers: false, minTakeScore: 15 },
+  intermediate: { discard: "keep", swapJokers: true, minTakeScore: null },
+  hard: { discard: "deny", swapJokers: true, minTakeScore: null },
+};
+
+// Hard's discard cost = keepScore + DANGER_WEIGHT * table danger
+//                                 + OPP_NEED_WEIGHT * opponent need.
+// 1/1 was the best of the weights tried (0.5-4); higher over-fits the guess.
+const DANGER_WEIGHT = 1;
+const OPP_NEED_WEIGHT = 1;
+
 function rankGroups(hand: Card[]): Record<string, Card[]> {
   const groups: Record<string, Card[]> = {};
   for (const c of hand) {
@@ -223,7 +253,9 @@ function canResolvePickup(
 // one that dumps a lot of extra "junk" cards into hand at once.
 function pickDraw(
   game: Game,
+  level: AILevel = "intermediate",
 ): { source: "closed" } | { source: "row"; cardId: string } {
+  const policy = POLICIES[level];
   const r = game.round as Round;
   if (!CascadeEngine.canDrawFromRow(game)) return { source: "closed" };
   const hand = r.hands[r.current];
@@ -247,13 +279,14 @@ function pickDraw(
       0,
     );
     const score = scoopValue - (scoop.length - 1) * 5; // mild penalty for extra clutter cards
+    if (policy.minTakeScore !== null && score < policy.minTakeScore) continue;
     if (!best || score > best.score) best = { cardId: bottom.id, score };
   }
   if (!best) return { source: "closed" };
   return { source: "row", cardId: best.cardId };
 }
 
-function playPart2(game: Game): void {
+function playPart2(game: Game, policy: Policy): void {
   const r = game.round as Round;
   let guard = 0;
   while (guard++ < 12) {
@@ -273,7 +306,8 @@ function playPart2(game: Game): void {
         continue;
       }
       const placed =
-        (CascadeEngine.hasComeOut(game) && tryPlaceSingleCard(game, card)) ||
+        (CascadeEngine.hasComeOut(game) &&
+          tryPlaceSingleCard(game, card, policy)) ||
         tryLayMeldContaining(game, cardId, hand, jokersLeft) ||
         (CascadeEngine.hasComeOut(game) &&
           tryResolveObligationViaRearrange(game, cardId, hand));
@@ -330,7 +364,7 @@ function playPart2(game: Game): void {
     let shed = false;
     for (const card of hand) {
       if (card.rank === "JOKER") continue;
-      if (tryPlaceSingleCard(game, card)) {
+      if (tryPlaceSingleCard(game, card, policy)) {
         shed = true;
         break;
       }
@@ -404,8 +438,8 @@ function canReplayJokerAfterSwap(
   );
 }
 
-function tryPlaceSingleCard(game: Game, card: Card): boolean {
-  if (trySwapJoker(game, card)) return true;
+function tryPlaceSingleCard(game: Game, card: Card, policy: Policy): boolean {
+  if (policy.swapJokers && trySwapJoker(game, card)) return true;
   const r = game.round as Round;
   for (const meld of r.tableau) {
     try {
@@ -529,13 +563,150 @@ function tryLayMeldContaining(
   return false;
 }
 
-function pickDiscard(game: Game): string {
+// Discard heuristics. A card is worth keeping when it pairs with another of
+// its rank (set potential) or has a same-suit neighbour within two ranks (run
+// potential; a gap needs a joker or a draw).
+function pairWeight(card: Card, o: Card): number {
+  if (o.id === card.id || o.rank === "JOKER" || card.rank === "JOKER") return 0;
+  if (o.rank === card.rank) return 3;
+  if (o.suit !== card.suit) return 0;
+  const d = Math.min(
+    ...[false, true].map((hi) =>
+      Math.abs(
+        CascadeEngine.orderedRankValue(card.rank as RealRank, hi) -
+          CascadeEngine.orderedRankValue(o.rank as RealRank, hi),
+      ),
+    ),
+  );
+  return d === 1 ? 3 : d === 2 ? 1.5 : 0;
+}
+
+function keepScore(card: Card, hand: Card[]): number {
+  let score = 0;
+  for (const o of hand) score += pairWeight(card, o);
+  return score;
+}
+
+// What the AI has legitimately seen of the opponent: only public information
+// (open row, table, hand sizes) plus its own observations of the open row
+// between its turns -- never the opponent's actual hand. A card that
+// vanished from the open row on the opponent's turn went into their hand
+// (they took it), and stays "known" until it shows up on the table or back
+// on the open row.
+interface OppMemory {
+  rowIds: Set<string>;
+  knownOpp: Map<string, Card>;
+}
+const memories = new WeakMap<Round, OppMemory>();
+let fullDeck: Card[] | null = null;
+
+function observeOpponent(game: Game): OppMemory {
+  const r = game.round as Round;
+  let mem = memories.get(r);
+  if (!mem) {
+    mem = { rowIds: new Set(r.openRow.map((c) => c.id)), knownOpp: new Map() };
+    memories.set(r, mem);
+    return mem;
+  }
+  const rowNow = new Set(r.openRow.map((c) => c.id));
+  const deck = fullDeck ?? (fullDeck = CascadeEngine.buildDeck());
+  for (const id of mem.rowIds) {
+    if (rowNow.has(id)) continue;
+    const card = deck.find((c) => c.id === id);
+    if (card) mem.knownOpp.set(id, card);
+  }
+  const onTable = new Set(
+    r.tableau.flatMap((m) => m.slots.map((sl) => sl.card.id)),
+  );
+  for (const id of [...mem.knownOpp.keys()])
+    if (onTable.has(id) || rowNow.has(id)) mem.knownOpp.delete(id);
+  mem.rowIds = rowNow;
+  return mem;
+}
+
+// Called at the end of the AI's own turn so its own row takes/discards are
+// not mistaken for the opponent's.
+function snapshotRow(game: Game): void {
+  const r = game.round as Round;
+  const mem = memories.get(r);
+  if (mem) mem.rowIds = new Set(r.openRow.map((c) => c.id));
+}
+
+// Expected usefulness of `card` to the opponent's hand: known cards count in
+// full; each unseen card counts with the chance it is in their hand.
+function oppNeedScore(game: Game, card: Card): number {
+  const r = game.round as Round;
+  const me = r.current;
+  const opp = (1 - me) as 0 | 1;
+  // Observed once at the start of the turn (takeTurn); re-observing here would
+  // mistake our own mid-turn cascade take for the opponent's.
+  const mem = memories.get(r) ?? observeOpponent(game);
+  const deck = fullDeck ?? (fullDeck = CascadeEngine.buildDeck());
+  const seen = new Set<string>();
+  for (const c of r.hands[me]) seen.add(c.id);
+  for (const c of r.openRow) seen.add(c.id);
+  for (const m of r.tableau) for (const sl of m.slots) seen.add(sl.card.id);
+  for (const id of mem.knownOpp.keys()) seen.add(id);
+  const unseen = deck.filter((c) => !seen.has(c.id));
+  const unknownInHand = Math.max(0, r.hands[opp].length - mem.knownOpp.size);
+  const p = unseen.length ? Math.min(1, unknownInHand / unseen.length) : 0;
+  let need = 0;
+  for (const k of mem.knownOpp.values()) need += pairWeight(card, k);
+  for (const u of unseen) need += p * pairWeight(card, u);
+  return need;
+}
+
+// How useful would this card be to the OPPONENT if it landed on top of the
+// open row? Only counts once they have come out (before that they cannot add to
+// a series). A card is dangerous if it extends a series on the table, or if it
+// can swap a joker out of one (the joker then comes back to them).
+function dangerScore(game: Game, card: Card): number {
+  const r = game.round as Round;
+  const opp = (1 - r.current) as 0 | 1;
+  if (!r.comeOut[opp] || card.rank === "JOKER") return 0;
+  const pts = CascadeEngine.pointValue(card.rank) / 5;
+  let danger = 0;
+  for (const meld of r.tableau) {
+    const reals = meld.slots.filter((sl) => sl.card.rank !== "JOKER");
+    const jokers = meld.slots.filter((sl) => sl.card.rank === "JOKER");
+    if (meld.type === "set") {
+      if (reals[0].card.rank !== card.rank) continue;
+      danger += 2 + pts;
+      if (jokers.length) danger += 6; // opponent can swap the joker out
+    } else {
+      if (reals[0].card.suit !== card.suit) continue;
+      const fits = CascadeEngine.solveRun(
+        [...reals.map((sl) => sl.card), card],
+        jokers.map((sl) => sl.card),
+      );
+      if (fits.ok) danger += 2 + pts;
+      const swap = jokers.some(
+        (sl) => sl.wildAs && sl.wildAs.rank === card.rank,
+      );
+      if (swap) danger += 6;
+    }
+  }
+  return danger;
+}
+
+function pickDiscard(game: Game, level: AILevel = "intermediate"): string {
+  const policy = POLICIES[level];
   const r = game.round as Round;
   const hand = r.hands[r.current];
   const nonJokers = hand.filter((c) => c.rank !== "JOKER");
   const pool = nonJokers.length ? nonJokers : hand;
+  const cost = (c: Card): number =>
+    policy.discard === "highest"
+      ? -CascadeEngine.pointValue(c.rank)
+      : keepScore(c, hand) +
+        (policy.discard === "deny"
+          ? DANGER_WEIGHT * dangerScore(game, c) +
+            OPP_NEED_WEIGHT * oppNeedScore(game, c)
+          : 0);
+  // Lowest cost goes; ties go to the higher point value.
   pool.sort(
     (a, b) =>
+      cost(a) - cost(b) ||
       CascadeEngine.pointValue(b.rank) - CascadeEngine.pointValue(a.rank),
   );
   return pool[0].id;
@@ -545,7 +716,26 @@ interface TakeTurnCallbacks {
   onStateChanged: () => void;
 }
 
-function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
+function takeTurn(
+  game: Game,
+  callbacks: TakeTurnCallbacks,
+  level: AILevel = "intermediate",
+): void {
+  const policy = POLICIES[level];
+  const track = policy.discard === "deny";
+  if (track) observeOpponent(game);
+  playTurn(game, callbacks, level);
+  // Remember the row as it stands after our own move, so our take/discard is
+  // not mistaken for the opponent's on the next observation.
+  if (track && game.round) snapshotRow(game);
+}
+
+function playTurn(
+  game: Game,
+  callbacks: TakeTurnCallbacks,
+  level: AILevel,
+): void {
+  const policy = POLICIES[level];
   const r = game.round as Round;
 
   if (r.part === "turn0") {
@@ -556,7 +746,7 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
   }
 
   if (r.part === 1) {
-    const draw = pickDraw(game);
+    const draw = pickDraw(game, level);
     if (draw.source === "row") {
       // The AI keeps it simple and never repeats a row-take (§2.3 allows
       // it, but one draw is enough for this heuristic).
@@ -571,7 +761,7 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
     callbacks.onStateChanged();
   }
 
-  playPart2(game);
+  playPart2(game, policy);
   if (r.ended) {
     callbacks.onStateChanged();
     return;
@@ -598,7 +788,7 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
         callbacks.onStateChanged();
         return;
       }
-      playPart2(game);
+      playPart2(game, policy);
       if (r.ended) {
         callbacks.onStateChanged();
         return;
@@ -610,7 +800,7 @@ function takeTurn(game: Game, callbacks: TakeTurnCallbacks): void {
   callbacks.onStateChanged();
 
   if (CascadeEngine.canProceedToDiscard(game)) {
-    const cardId = pickDiscard(game);
+    const cardId = pickDiscard(game, level);
     CascadeEngine.discard(game, cardId);
   }
   callbacks.onStateChanged();

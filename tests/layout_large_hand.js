@@ -277,7 +277,7 @@ async function testChrome(page, vp) {
   const items = await q(
     `Array.from(document.querySelectorAll("#menuPop button")).map(b => b.textContent)`,
   );
-  const want = ["New", "Round 2", /^Goal /, "Help", /^Debug/];
+  const want = ["New", "Round 2", /^Goal /, /^Opponent: /, "Help", /^Debug/];
   const ok = want.every((w, i) =>
     w instanceof RegExp ? w.test(items[i] ?? "") : items[i] === w,
   );
