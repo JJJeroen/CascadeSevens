@@ -570,6 +570,7 @@ function toggleTurn0Take(): void {
 function canAddToTableAfterTake(g: Game, card: Card): boolean {
   try {
     const sim = structuredClone(g) as Game;
+    sim.undoFor = undefined; // a throwaway copy: no undo snapshots
     CascadeEngine.drawFromOpenRow(sim, card.id);
     const simRound = sim.round as Round;
     if (!simRound.comeOut[simRound.current]) return false;
@@ -1490,7 +1491,7 @@ function renderControls(): void {
           ? "Joker (you must use it this turn)"
           : `${label} (must lay it in a series)`;
     });
-    obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : CascadeEngine.canRestartTurn(g) ? ' (stuck? tap "Start turn over")' : ""}`;
+    obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndo(g) || CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : CascadeEngine.canRestartTurn(g) ? ' (stuck? tap "Start turn over")' : ""}`;
   } else {
     obligEl.hidden = true;
   }

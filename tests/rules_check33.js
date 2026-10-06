@@ -304,6 +304,39 @@ check("no undo before the draw, and never back past a pile draw", () => {
 });
 
 check(
+  "take, lay, Start turn over, pile draw: undo cannot reach back past the draw",
+  () => {
+    const game = E.newGame("standard", () => 0.1);
+    game.undoFor = 0;
+    E.startRound(game, () => 0.5);
+    E.turn0Decline(game);
+    E.turn0Decline(game);
+    const r = game.round;
+    r.current = 0;
+    r.comeOut = [true, true];
+    r.openRow = [card("5", "C")];
+    r.hands[0] = [
+      card("5", "D"),
+      card("5", "H"),
+      card("K", "S"),
+      card("2", "C"),
+      card("9", "D"),
+    ];
+    E.drawFromOpenRow(game, "5C"); // Part 1: cascade take
+    E.layNewMeld(game, sel("5C", "5D", "5H")); // a recorded step
+    if (!E.canUndo(game)) throw new Error("setup: a step should be recorded");
+    E.restartTurn(game); // back to Part 1
+    E.drawFromClosedPile(game); // the pile card has now been seen
+    if (E.canUndo(game) || r.undoStack.length !== 0)
+      throw new Error(
+        "no step may survive the pile draw (the pile card would be un-seen)",
+      );
+    if (!throws(() => E.undo(game)))
+      throw new Error("undo must refuse after the pile draw");
+  },
+);
+
+check(
   "only the undo-enabled seat records; AI games and the other seat do not",
   () => {
     const ai = setup(

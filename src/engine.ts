@@ -299,6 +299,10 @@ function drawFromClosedPile(game: Game): void {
   logMsg(game, `Player ${r.current + 1} drew from the pile.`);
   r.part = 2;
   r.lastDraw = null;
+  // Undo must never reach back past this draw (the player has now seen the pile
+  // card). Other paths already empty the stack before Part 1; this is the
+  // belt-and-braces guarantee at the one place that matters.
+  r.undoStack = [];
   r.turnStart = snapshotTurn(r, 2); // after the draw: the drawn card has been seen
 }
 
