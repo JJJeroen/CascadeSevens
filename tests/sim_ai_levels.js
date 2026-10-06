@@ -11,6 +11,11 @@ import { CascadeAI } from "../docs/ai.js";
 
 const noop = { onStateChanged: () => {} };
 
+// The heuristic levels are tested with Hard's Monte-Carlo search switched off
+// (it makes Hard ~400x slower per move, too slow for thousands of games). The
+// search has its own checks at the end of this file.
+CascadeAI.aiSettings.search = false;
+
 function winRate(levelA, levelB, games) {
   let a = 0;
   let decided = 0;
@@ -127,7 +132,7 @@ for (let g = 0; g < 80; g++) {
     const oppHand = new Set(r.hands[1 - seat].map((c) => c.id));
     CascadeAI.takeTurn(game, noop, "hard");
     if (game.round.ended) break;
-    const known = CascadeAI.knownOpponentCards(game).sort();
+    const known = CascadeAI.knownOpponentCards(game, seat).sort();
     const want = [...expected].sort();
     memChecks++;
     if (known.length) memNonEmpty++;
@@ -155,3 +160,78 @@ if (memChecks < 400 || memNonEmpty < 100) {
 console.log(
   `OK: hard's memory matched the public record in ${memChecks} turns (${memNonEmpty} with known cards).`,
 );
+
+// --- Hard's search -------------------------------------------------------
+// Switched back on: Hard now plays out simulated rest-of-round games. It must
+// still use public information only: two copies of a position that differ only
+// in the opponent's hidden hand (swapped with pile cards it will not draw this
+// turn) must give identical results for Hard's whole turn.
+CascadeAI.aiSettings.search = true;
+let searchStates = 0;
+for (let g = 0; g < 40 && searchStates < 30; g++) {
+  const rng = CascadeEngine.seededRng(g * 53 + 9);
+  const game = CascadeEngine.newGame("quick", rng);
+  CascadeEngine.startRound(game, rng);
+  for (let t = 0; t < 60 && !game.round.ended; t++) {
+    CascadeAI.takeTurn(game, noop, "intermediate");
+    const r = game.round;
+    if (r.ended || r.part === "turn0" || t < 6 || t % 5 !== 0) continue;
+    const opp = 1 - r.current;
+    const n = r.hands[opp].length;
+    if (r.closedPile.length < n + 12) continue;
+    const a = structuredClone(game);
+    const b = structuredClone(game);
+    const rb = b.round;
+    const real = rb.hands[opp];
+    rb.hands[opp] = rb.closedPile.splice(0, n);
+    rb.closedPile.unshift(...real);
+    const mover = r.current;
+    CascadeAI.takeTurn(a, noop, "hard");
+    CascadeAI.takeTurn(b, noop, "hard");
+    // the mover's own state after its turn (index mover, not the next player)
+    const view = (x) => {
+      const rr = x.round;
+      return JSON.stringify({
+        hand: rr.hands[mover].map((c) => c.id).sort(),
+        row: rr.openRow.map((c) => c.id),
+        table: rr.tableau.map((m) => m.slots.map((sl) => sl.card.id)),
+      });
+    };
+    searchStates++;
+    if (view(a) !== view(b)) {
+      console.log(
+        `FAIL: Hard's turn depends on the opponent's hand (game ${g}, turn ${t})`,
+      );
+      process.exit(1);
+    }
+  }
+}
+if (searchStates < 20) {
+  console.log(`FAIL: only ${searchStates} search states checked`);
+  process.exit(1);
+}
+console.log(
+  `OK: hard's turn (with search) ignored the opponent's hand in ${searchStates} states.`,
+);
+
+// Smoke: whole games with the search on finish, no stalls.
+for (let g = 0; g < 4; g++) {
+  const rng = CascadeEngine.seededRng(g * 41 + 11);
+  const game = CascadeEngine.newGame("quick", rng);
+  let rounds = 0;
+  while (!game.gameOver && rounds++ < 40) {
+    CascadeEngine.startRound(game, rng);
+    let turns = 0;
+    while (!game.round.ended && turns++ < 500)
+      CascadeAI.takeTurn(
+        game,
+        noop,
+        game.round.current === g % 2 ? "hard" : "intermediate",
+      );
+    if (turns >= 500) {
+      console.log(`STALL: hard (search) vs intermediate, game ${g}`);
+      process.exit(1);
+    }
+  }
+}
+console.log("OK: hard with search played 4 full games without stalling.");

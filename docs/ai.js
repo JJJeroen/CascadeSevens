@@ -4,10 +4,30 @@
 import { CascadeEngine } from "./engine.js";
 export const AI_LEVELS = ["novice", "intermediate", "hard"];
 const POLICIES = {
-    novice: { discard: "highest", swapJokers: false, minTakeScore: 15 },
-    intermediate: { discard: "keep", swapJokers: true, minTakeScore: null },
-    hard: { discard: "deny", swapJokers: true, minTakeScore: null },
+    novice: {
+        discard: "highest",
+        swapJokers: false,
+        minTakeScore: 15,
+        search: null,
+    },
+    intermediate: {
+        discard: "keep",
+        swapJokers: true,
+        minTakeScore: null,
+        search: null,
+    },
+    hard: {
+        discard: "deny",
+        swapJokers: true,
+        minTakeScore: null,
+        // 8 samples x 4 candidates, capped at 500 simulated turns: about 55% of
+        // the uncapped search's edge at roughly 100 ms (worst ~330 ms) per move.
+        search: { samples: 8, candidates: 4, turnBudget: 500 },
+    },
 };
+// Test hook: switch the search off to test the heuristic levels quickly. The
+// app never changes it.
+export const aiSettings = { search: true };
 // Hard's discard cost = keepScore + DANGER_WEIGHT * table danger
 //                                 + OPP_NEED_WEIGHT * opponent need.
 // 1/1 was the best of the weights tried (0.5-4); higher over-fits the guess.
@@ -493,16 +513,28 @@ function keepScore(card, hand) {
         score += pairWeight(card, o);
     return score;
 }
-// One memory per round, so only one tracking (Hard) player per round: two Hard
-// players would each miss the other's takes. The app is human vs AI.
+// One memory per round and seat, so two Hard players (self-play in tests)
+// each keep their own view of the other.
 const memories = new WeakMap();
 let fullDeck = null;
-function observeOpponent(game) {
+// The seat whose move it is (Turn 0 asks the other player before turn 1).
+function seatToMove(game) {
     const r = game.round;
-    let mem = memories.get(r);
+    return r.part === "turn0"
+        ? (CascadeEngine.turn0CurrentAskee(game) ?? r.current)
+        : r.current;
+}
+function memoryOf(r, seat) {
+    return memories.get(r)?.[seat];
+}
+function observeOpponent(game, seat) {
+    const r = game.round;
+    let mem = memoryOf(r, seat);
     if (!mem) {
         mem = { rowIds: new Set(r.openRow.map((c) => c.id)), knownOpp: new Map() };
-        memories.set(r, mem);
+        const both = memories.get(r) ?? [];
+        both[seat] = mem;
+        memories.set(r, both);
         return mem;
     }
     const rowNow = new Set(r.openRow.map((c) => c.id));
@@ -521,28 +553,29 @@ function observeOpponent(game) {
     mem.rowIds = rowNow;
     return mem;
 }
-// Called at the end of the AI's own turn so its own row takes/discards are
-// not mistaken for the opponent's.
-// Card ids Hard currently believes the opponent holds (a test hook).
-function knownOpponentCards(game) {
-    const mem = memories.get(game.round);
+// Card ids the given seat's Hard AI believes the opponent holds (a test hook).
+function knownOpponentCards(game, seat) {
+    const mem = memoryOf(game.round, seat);
     return mem ? [...mem.knownOpp.keys()] : [];
 }
-function snapshotRow(game) {
+// Called at the end of the AI's own turn so its own row takes/discards are
+// not mistaken for the opponent's.
+function snapshotRow(game, seat) {
     const r = game.round;
-    const mem = memories.get(r);
+    const mem = memoryOf(r, seat);
     if (mem)
         mem.rowIds = new Set(r.openRow.map((c) => c.id));
 }
-// Expected usefulness of `card` to the opponent's hand: known cards count in
-// full; each unseen card counts with the chance it is in their hand.
-function oppNeedScore(game, card) {
+// What we can infer about the opponent's hand from public information: the
+// cards we saw them take (known), the cards nobody has shown us (unseen), and
+// the chance each unseen card is in their hand (p).
+function opponentModel(game) {
     const r = game.round;
     const me = r.current;
     const opp = (1 - me);
     // Observed once at the start of the turn (takeTurn); re-observing here would
     // mistake our own mid-turn cascade take for the opponent's.
-    const mem = memories.get(r) ?? observeOpponent(game);
+    const mem = memoryOf(r, me) ?? observeOpponent(game, me);
     const deck = fullDeck ?? (fullDeck = CascadeEngine.buildDeck());
     const seen = new Set();
     for (const c of r.hands[me])
@@ -557,8 +590,14 @@ function oppNeedScore(game, card) {
     const unseen = deck.filter((c) => !seen.has(c.id));
     const unknownInHand = Math.max(0, r.hands[opp].length - mem.knownOpp.size);
     const p = unseen.length ? Math.min(1, unknownInHand / unseen.length) : 0;
+    return { known: [...mem.knownOpp.values()], unseen, p };
+}
+// Expected usefulness of `card` to the opponent's hand: known cards count in
+// full; each unseen card counts with the chance it is in their hand.
+function oppNeedScore(game, card) {
+    const { known, unseen, p } = opponentModel(game);
     let need = 0;
-    for (const k of mem.knownOpp.values())
+    for (const k of known)
         need += pairWeight(card, k);
     for (const u of unseen)
         need += p * pairWeight(card, u);
@@ -598,6 +637,54 @@ function dangerScore(game, card) {
     }
     return danger;
 }
+// Determinized Monte-Carlo discard. For each of the best few heuristic
+// discards, play the rest of the round out with Intermediate on both sides
+// against opponent hands sampled from the cards we have not seen (never their
+// real hand), and keep the discard with the best average round-score margin.
+// Every candidate sees the same samples, which cuts the noise. Seeded from our
+// own hand, so a position always gives the same answer.
+function searchDiscard(game, ranked, search) {
+    const r = game.round;
+    const me = r.current;
+    const opp = (1 - me);
+    const { known, unseen } = opponentModel(game);
+    const unknownCount = Math.max(0, r.hands[opp].length - known.length);
+    let seed = 7;
+    for (const c of r.hands[me])
+        for (const ch of c.id)
+            seed = (seed * 31 + ch.charCodeAt(0)) | 0;
+    const rng = CascadeEngine.seededRng(seed);
+    const cands = ranked.slice(0, search.candidates);
+    const total = cands.map(() => 0);
+    const quiet = { onStateChanged: () => { } };
+    let simulated = 0;
+    for (let k = 0; k < search.samples; k++) {
+        if (k > 0 && simulated >= search.turnBudget)
+            break;
+        const pool = CascadeEngine.shuffle(unseen.slice(), rng);
+        const oppCards = [...known, ...pool.slice(0, unknownCount)];
+        const rest = pool.slice(unknownCount);
+        for (let i = 0; i < cands.length; i++) {
+            const sim = structuredClone(game);
+            const simRound = sim.round;
+            simRound.hands[opp] = oppCards.map((c) => ({ ...c }));
+            simRound.closedPile = rest.map((c) => ({ ...c }));
+            CascadeEngine.discard(sim, cands[i].id);
+            let turns = 0;
+            while (!simRound.ended && turns++ < 80)
+                takeTurn(sim, quiet, "intermediate");
+            simulated += turns;
+            const rs = simRound.roundScores;
+            if (rs)
+                total[i] += rs[me] - rs[opp];
+        }
+    }
+    let best = 0;
+    for (let i = 1; i < cands.length; i++)
+        if (total[i] > total[best])
+            best = i;
+    return cands[best].id;
+}
 function pickDiscard(game, level = "intermediate") {
     const policy = POLICIES[level];
     const r = game.round;
@@ -614,18 +701,25 @@ function pickDiscard(game, level = "intermediate") {
     // Lowest cost goes; ties go to the higher point value.
     pool.sort((a, b) => cost(a) - cost(b) ||
         CascadeEngine.pointValue(b.rank) - CascadeEngine.pointValue(a.rank));
+    if (policy.search &&
+        aiSettings.search &&
+        typeof structuredClone === "function" && // old WebViews: heuristic only
+        nonJokers.length > 1 &&
+        CascadeEngine.canProceedToDiscard(game))
+        return searchDiscard(game, pool, policy.search);
     return pool[0].id;
 }
 function takeTurn(game, callbacks, level = "intermediate") {
     const policy = POLICIES[level];
     const track = policy.discard === "deny";
+    const seat = seatToMove(game);
     if (track)
-        observeOpponent(game);
+        observeOpponent(game, seat);
     playTurn(game, callbacks, level);
     // Remember the row as it stands after our own move, so our take/discard is
     // not mistaken for the opponent's on the next observation.
     if (track && game.round)
-        snapshotRow(game);
+        snapshotRow(game, seat);
 }
 function playTurn(game, callbacks, level) {
     const policy = POLICIES[level];
@@ -696,6 +790,7 @@ function playTurn(game, callbacks, level) {
     callbacks.onStateChanged();
 }
 export const CascadeAI = {
+    aiSettings,
     takeTurn,
     pickDraw,
     pickDiscard,
