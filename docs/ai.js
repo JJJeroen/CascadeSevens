@@ -703,10 +703,16 @@ function pickDiscard(game, level = "intermediate") {
         CascadeEngine.pointValue(b.rank) - CascadeEngine.pointValue(a.rank));
     if (policy.search &&
         aiSettings.search &&
-        typeof structuredClone === "function" && // old WebViews: heuristic only
         nonJokers.length > 1 &&
-        CascadeEngine.canProceedToDiscard(game))
-        return searchDiscard(game, pool, policy.search);
+        CascadeEngine.canProceedToDiscard(game)) {
+        try {
+            return searchDiscard(game, pool, policy.search);
+        }
+        catch {
+            // A simulated game hit a state the engine rejects: the heuristic pick
+            // beats freezing the real turn.
+        }
+    }
     return pool[0].id;
 }
 function takeTurn(game, callbacks, level = "intermediate") {

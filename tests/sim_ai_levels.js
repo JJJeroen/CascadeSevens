@@ -28,7 +28,11 @@ function winRate(levelA, levelB, games) {
       CascadeEngine.startRound(game, rng);
       let turns = 0;
       while (!game.round.ended && turns++ < 500) {
-        const level = game.round.current === seatA ? levelA : levelB;
+        const mover =
+          game.round.part === "turn0"
+            ? CascadeEngine.turn0CurrentAskee(game)
+            : game.round.current;
+        const level = mover === seatA ? levelA : levelB;
         CascadeAI.takeTurn(game, noop, level);
       }
       if (turns >= 500) {
@@ -235,3 +239,73 @@ for (let g = 0; g < 4; g++) {
   }
 }
 console.log("OK: hard with search played 4 full games without stalling.");
+
+// Same check with Hard's memory live: replay a seeded game (Hard vs
+// Intermediate, search off for the prefix so it is fast), and just before one
+// Hard turn swap the opponent's hidden hand with pile cards it will not draw.
+// Both replays are identical up to that point, so the memory of what the
+// opponent took is real and the turn (with search on) must come out the same.
+let liveStates = 0;
+let withKnown = 0;
+const playTo = (g, turnNo, swap) => {
+  const rng = CascadeEngine.seededRng(g * 29 + 13);
+  const game = CascadeEngine.newGame("quick", rng);
+  CascadeEngine.startRound(game, rng);
+  const seat = g % 2;
+  for (let t = 0; t < 80 && !game.round.ended; t++) {
+    const r = game.round;
+    const mover =
+      r.part === "turn0" ? CascadeEngine.turn0CurrentAskee(game) : r.current;
+    const hard = mover === seat;
+    if (hard && r.part !== "turn0" && t >= turnNo) {
+      const opp = 1 - seat;
+      const n = r.hands[opp].length;
+      if (r.closedPile.length < n + 12) return null;
+      if (swap) {
+        const real = r.hands[opp];
+        r.hands[opp] = r.closedPile.splice(0, n);
+        r.closedPile.unshift(...real);
+      }
+      const known = CascadeAI.knownOpponentCards(game, seat).length;
+      CascadeAI.aiSettings.search = true;
+      CascadeAI.takeTurn(game, noop, "hard");
+      CascadeAI.aiSettings.search = false;
+      return {
+        known,
+        view: JSON.stringify({
+          hand: game.round.hands[seat].map((c) => c.id).sort(),
+          row: game.round.openRow.map((c) => c.id),
+          table: game.round.tableau.map((m) => m.slots.map((sl) => sl.card.id)),
+        }),
+      };
+    }
+    CascadeAI.aiSettings.search = false;
+    CascadeAI.takeTurn(game, noop, hard ? "hard" : "intermediate");
+  }
+  return null;
+};
+for (let g = 0; g < 60 && liveStates < 24; g++) {
+  for (const turnNo of [8, 14, 20]) {
+    const a = playTo(g, turnNo, false);
+    const b = playTo(g, turnNo, true);
+    if (!a || !b) continue;
+    liveStates++;
+    if (a.known > 0) withKnown++;
+    if (a.view !== b.view) {
+      console.log(
+        `FAIL: Hard's turn depends on the opponent's hand with live memory (game ${g}, turn ${turnNo})`,
+      );
+      process.exit(1);
+    }
+  }
+}
+CascadeAI.aiSettings.search = true;
+if (liveStates < 12 || withKnown < 3) {
+  console.log(
+    `FAIL: live-memory check too thin (${liveStates} states, ${withKnown} with remembered cards)`,
+  );
+  process.exit(1);
+}
+console.log(
+  `OK: hard's turn ignored the opponent's hand with live memory in ${liveStates} states (${withKnown} with remembered cards).`,
+);
