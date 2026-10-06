@@ -700,7 +700,7 @@ function renderRearrangeView() {
     });
     // A visible target for "start a new group with the selected / dragged card".
     const newBox = document.createElement("div");
-    newBox.className = "meld draft-new";
+    newBox.classList.add("meld", "draft-new");
     newBox.dataset.groupId = "new";
     newBox.textContent = "+ New group";
     newBox.addEventListener("click", () => {
