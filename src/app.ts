@@ -41,11 +41,17 @@ type DropTarget =
   | { kind: "meld"; meldId: string; onCardId: string | null } // onCardId: the specific card, if any, under the pointer right now
   | { kind: "open-row" }
   | { kind: "hand"; beforeCardId: string | null }
-  | { kind: "tableau-empty" }; // dropped in the tableau area but not on any meld
+  | { kind: "tableau-empty" } // dropped in the tableau area but not on any meld
+  // Rearrange drafting: a group box, the "+ New group" box (or empty table
+  // space), or the draft hand.
+  | { kind: "draft-group"; groupId: string }
+  | { kind: "draft-new" }
+  | { kind: "draft-hand" };
 
 type DragSource =
   | { kind: "hand"; cardId: string }
-  | { kind: "meld"; cardId: string; meldId: string; ownsCard: boolean };
+  | { kind: "meld"; cardId: string; meldId: string; ownsCard: boolean }
+  | { kind: "draft"; cardId: string }; // a card in the rearrange draft (group or hand)
 
 interface DragState {
   pointerId: number;
@@ -767,8 +773,8 @@ function renderRearrangeView(): void {
       ? cardText(rearrange.cardById[r.rowObligationCardId])
       : null;
   $("tableauHint").textContent = stillOwed
-    ? `(drafting — nothing is final until you commit; tap a card, then tap a group -- or any card already in it -- to move it there — you still owe ${stillOwed} from the cascade this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
-    : "(drafting — nothing is final until you commit; tap a card, then tap a group -- or any card already in it -- to move it there)";
+    ? `(drafting — nothing is final until you commit; drag a card to a group, or tap a card, then tap a group -- or any card already in it -- to move it there — you still owe ${stillOwed} from the cascade this turn, so it needs to end up in a valid group, or it'll still be owed after you commit)`
+    : "(drafting — nothing is final until you commit; drag a card to a group, or tap a card, then tap a group -- or any card already in it -- to move it there)";
   const el = $("tableau");
   el.innerHTML = "";
   const state = CascadeEngine.rearrangeState(g);
@@ -778,6 +784,7 @@ function renderRearrangeView(): void {
   state.groups.forEach((gr) => {
     const box = document.createElement("div");
     box.className = "meld " + (gr.valid ? "draft-valid" : "draft-invalid");
+    box.dataset.groupId = gr.groupId;
     box.title = gr.valid ? `Valid ${gr.type}` : "Not a valid set or run yet";
     box.addEventListener("click", () => {
       if (!rearrangeSelectedCardId) return;
@@ -828,11 +835,29 @@ function renderRearrangeView(): void {
           rearrangeSelectedCardId === cardId ? null : cardId;
         render();
       });
+      attachDragSource(cardEl, { kind: "draft", cardId });
       cardsWrap.appendChild(cardEl);
     });
     box.appendChild(cardsWrap);
     el.appendChild(box);
   });
+
+  // A visible target for "start a new group with the selected / dragged card".
+  const newBox = document.createElement("div");
+  newBox.className = "meld draft-new";
+  newBox.dataset.groupId = "new";
+  newBox.textContent = "+ New group";
+  newBox.addEventListener("click", () => {
+    if (!rearrangeSelectedCardId) return;
+    try {
+      CascadeEngine.rearrangeMoveCard(g, rearrangeSelectedCardId, "new");
+      rearrangeSelectedCardId = null;
+      render();
+    } catch (e) {
+      showError(errMsg(e));
+    }
+  });
+  el.appendChild(newBox);
 
   $("rearrangeHandPoolWrap").hidden = false;
   const poolEl = $("rearrangeHandPool");
@@ -848,6 +873,7 @@ function renderRearrangeView(): void {
         rearrangeSelectedCardId === cardId ? null : cardId;
       render();
     });
+    attachDragSource(cardEl, { kind: "draft", cardId });
     poolEl.appendChild(cardEl);
   });
 }
@@ -1083,6 +1109,13 @@ function dropTargetEl(target: DropTarget | null): HTMLElement | null {
   }
   if (target.kind === "open-row") return $("openRow");
   if (target.kind === "hand") return $("hand");
+  if (target.kind === "draft-group")
+    return document.querySelector<HTMLElement>(
+      `.meld[data-group-id="${target.groupId}"]`,
+    );
+  if (target.kind === "draft-new")
+    return document.querySelector<HTMLElement>('.meld[data-group-id="new"]');
+  if (target.kind === "draft-hand") return $("rearrangeHandPoolWrap");
   return null; // tableau-empty: nothing to highlight
 }
 
@@ -1099,6 +1132,16 @@ function updateDragOverHighlight(
 function hitTestDrop(x: number, y: number): DropTarget | null {
   const el = document.elementFromPoint(x, y);
   if (!el) return null;
+  if ((game as Game).round?.rearrange) {
+    const box = el.closest<HTMLElement>(".meld[data-group-id]");
+    if (box)
+      return box.dataset.groupId === "new"
+        ? { kind: "draft-new" }
+        : { kind: "draft-group", groupId: box.dataset.groupId as string };
+    if (el.closest("#rearrangeHandPoolWrap")) return { kind: "draft-hand" };
+    if (el.closest("#tableau")) return { kind: "draft-new" };
+    return null;
+  }
   const meldBox = el.closest<HTMLElement>(".meld[data-meld-id]");
   if (meldBox) {
     const onCard = el.closest<HTMLElement>(".meld .card[data-card-id]");
@@ -1176,6 +1219,26 @@ function resolveDrop(ds: DragState): void {
   const g = game as Game;
   const r = g.round as Round;
   const target = ds.hoverTarget;
+
+  if (ds.source.kind === "draft") {
+    const dest =
+      target?.kind === "draft-group"
+        ? target.groupId
+        : target?.kind === "draft-new"
+          ? "new"
+          : target?.kind === "draft-hand"
+            ? "hand"
+            : null;
+    if (!dest) return; // dropped nowhere useful: the card snaps back
+    try {
+      CascadeEngine.rearrangeMoveCard(g, ds.source.cardId, dest);
+      rearrangeSelectedCardId = null;
+      render();
+    } catch (e) {
+      showError(errMsg(e));
+    }
+    return;
+  }
 
   if (ds.source.kind === "meld") {
     if (target?.kind === "meld" && target.meldId === ds.source.meldId) return; // dropped back in place

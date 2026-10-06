@@ -14,8 +14,8 @@
     "build": "node scripts/write-version.mjs && tsc",
     "pretest": "npm run build",
     "test": "node tests/run-all.js",
-    "test:browser": "node tests/smoke_browser.js && node tests/ai_stale_timer.js && node tests/splash_version.js && node tests/layout_large_hand.js && node tests/opponent_menu.js",
-    "test:layout": "node tests/layout_large_hand.js && node tests/opponent_menu.js",
+    "test:browser": "node tests/smoke_browser.js && node tests/ai_stale_timer.js && node tests/splash_version.js && node tests/layout_large_hand.js && node tests/opponent_menu.js && node tests/rearrange_drag.js",
+    "test:layout": "node tests/layout_large_hand.js && node tests/opponent_menu.js && node tests/rearrange_drag.js",
     "lint": "eslint . && prettier --check \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\"",
     "lint:fix": "eslint . --fix && prettier --write \"src/**/*.ts\" \"docs/**/*.{css,html}\" \"tests/**/*.js\"",
     "cap:sync": "cap sync android"
