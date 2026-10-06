@@ -493,6 +493,8 @@ function keepScore(card, hand) {
         score += pairWeight(card, o);
     return score;
 }
+// One memory per round, so only one tracking (Hard) player per round: two Hard
+// players would each miss the other's takes. The app is human vs AI.
 const memories = new WeakMap();
 let fullDeck = null;
 function observeOpponent(game) {
@@ -521,6 +523,11 @@ function observeOpponent(game) {
 }
 // Called at the end of the AI's own turn so its own row takes/discards are
 // not mistaken for the opponent's.
+// Card ids Hard currently believes the opponent holds (a test hook).
+function knownOpponentCards(game) {
+    const mem = memories.get(game.round);
+    return mem ? [...mem.knownOpp.keys()] : [];
+}
 function snapshotRow(game) {
     const r = game.round;
     const mem = memories.get(r);
@@ -688,4 +695,10 @@ function playTurn(game, callbacks, level) {
     }
     callbacks.onStateChanged();
 }
-export const CascadeAI = { takeTurn, pickDraw, pickDiscard, canResolvePickup };
+export const CascadeAI = {
+    takeTurn,
+    pickDraw,
+    pickDiscard,
+    canResolvePickup,
+    knownOpponentCards,
+};

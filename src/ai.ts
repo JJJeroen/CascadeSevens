@@ -597,6 +597,8 @@ interface OppMemory {
   rowIds: Set<string>;
   knownOpp: Map<string, Card>;
 }
+// One memory per round, so only one tracking (Hard) player per round: two Hard
+// players would each miss the other's takes. The app is human vs AI.
 const memories = new WeakMap<Round, OppMemory>();
 let fullDeck: Card[] | null = null;
 
@@ -626,6 +628,12 @@ function observeOpponent(game: Game): OppMemory {
 
 // Called at the end of the AI's own turn so its own row takes/discards are
 // not mistaken for the opponent's.
+// Card ids Hard currently believes the opponent holds (a test hook).
+function knownOpponentCards(game: Game): string[] {
+  const mem = memories.get(game.round as Round);
+  return mem ? [...mem.knownOpp.keys()] : [];
+}
+
 function snapshotRow(game: Game): void {
   const r = game.round as Round;
   const mem = memories.get(r);
@@ -806,4 +814,10 @@ function playTurn(
   callbacks.onStateChanged();
 }
 
-export const CascadeAI = { takeTurn, pickDraw, pickDiscard, canResolvePickup };
+export const CascadeAI = {
+  takeTurn,
+  pickDraw,
+  pickDiscard,
+  canResolvePickup,
+  knownOpponentCards,
+};

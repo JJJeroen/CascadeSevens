@@ -93,3 +93,65 @@ if (states < 200) {
 console.log(
   `OK: hard's discard ignored the opponent's hand in ${states} states.`,
 );
+
+// The opponent model's memory must equal what was publicly visible: the cards
+// that left the open row during the opponent's turns, minus those since laid
+// on the table or put back on the row. Hard plays here (so its memory really
+// updates). A memory filled from the opponent's actual hand would differ; the
+// remembered cards must also really be in that hand.
+let memChecks = 0;
+let memNonEmpty = 0;
+for (let g = 0; g < 80; g++) {
+  const rng = CascadeEngine.seededRng(g * 17 + 3);
+  const game = CascadeEngine.newGame("quick", rng);
+  CascadeEngine.startRound(game, rng);
+  const seat = g % 2;
+  let prevRow = null;
+  const expected = new Set();
+  for (let t = 0; t < 120 && !game.round.ended; t++) {
+    const r = game.round;
+    const mover =
+      r.part === "turn0" ? CascadeEngine.turn0CurrentAskee(game) : r.current;
+    if (mover !== seat) {
+      CascadeAI.takeTurn(game, noop, "intermediate");
+      continue;
+    }
+    const rowNow = new Set(r.openRow.map((c) => c.id));
+    const onTable = new Set(
+      r.tableau.flatMap((m) => m.slots.map((sl) => sl.card.id)),
+    );
+    if (prevRow)
+      for (const id of prevRow) if (!rowNow.has(id)) expected.add(id);
+    for (const id of [...expected])
+      if (onTable.has(id) || rowNow.has(id)) expected.delete(id);
+    const oppHand = new Set(r.hands[1 - seat].map((c) => c.id));
+    CascadeAI.takeTurn(game, noop, "hard");
+    if (game.round.ended) break;
+    const known = CascadeAI.knownOpponentCards(game).sort();
+    const want = [...expected].sort();
+    memChecks++;
+    if (known.length) memNonEmpty++;
+    if (JSON.stringify(known) !== JSON.stringify(want)) {
+      console.log(
+        `FAIL: Hard's memory ${known} differs from the public record ${want} (game ${g}, turn ${t})`,
+      );
+      process.exit(1);
+    }
+    if (!known.every((id) => oppHand.has(id))) {
+      console.log(
+        `FAIL: Hard remembers a card the opponent does not hold (game ${g}, turn ${t})`,
+      );
+      process.exit(1);
+    }
+    prevRow = new Set(game.round.openRow.map((c) => c.id));
+  }
+}
+if (memChecks < 400 || memNonEmpty < 100) {
+  console.log(
+    `FAIL: memory check too thin (${memChecks} checks, ${memNonEmpty} with known cards)`,
+  );
+  process.exit(1);
+}
+console.log(
+  `OK: hard's memory matched the public record in ${memChecks} turns (${memNonEmpty} with known cards).`,
+);

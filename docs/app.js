@@ -221,7 +221,7 @@ function newGame() {
         : Number(seedField);
     if (!Number.isFinite(seed)) {
         showError(`"${seedField}" isn't a valid seed -- enter a whole number, or leave it blank for a random deal.`);
-        return;
+        return false;
     }
     currentSeed = seed;
     currentRng = CascadeEngine.seededRng(seed);
@@ -235,6 +235,7 @@ function newGame() {
     resetDialogPosition($("modalBox"));
     render();
     scheduleIfAITurn();
+    return true;
 }
 function nextRound() {
     CascadeEngine.startRound(game, currentRng ?? undefined);
@@ -1792,14 +1793,19 @@ $("menuGoalBtn").addEventListener("click", () => {
 $("menuLevelBtn").addEventListener("click", () => {
     closeMenu();
     const pick = (level) => () => {
+        const previous = aiLevel;
         aiLevel = level;
+        // newGame refuses (bad seed): keep the old level, as no new game started.
+        if (!newGame()) {
+            aiLevel = previous;
+            return;
+        }
         try {
             localStorage.setItem(LEVEL_KEY, level);
         }
         catch {
             /* storage unavailable: the level lasts until reload */
         }
-        newGame();
     };
     showDialog("Opponent", "How well the AI plays. Changing it starts a new game.", AI_LEVELS.map((level) => ({
         label: LEVEL_LABELS[level],

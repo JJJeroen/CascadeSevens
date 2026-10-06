@@ -298,7 +298,7 @@ function buildCardEl(card: Card, opts: BuildCardElOpts = {}): HTMLElement {
 
 // --- Game lifecycle -------------------------------------------------------
 
-function newGame(): void {
+function newGame(): boolean {
   const mode = $<HTMLSelectElement>("modeSelect").value as GameMode;
   const seedField = $<HTMLInputElement>("seedInput").value.trim();
   // Leave the field blank for a fresh random deal; enter a previously-shown
@@ -312,7 +312,7 @@ function newGame(): void {
     showError(
       `"${seedField}" isn't a valid seed -- enter a whole number, or leave it blank for a random deal.`,
     );
-    return;
+    return false;
   }
   currentSeed = seed;
   currentRng = CascadeEngine.seededRng(seed);
@@ -326,6 +326,7 @@ function newGame(): void {
   resetDialogPosition($("modalBox"));
   render();
   scheduleIfAITurn();
+  return true;
 }
 
 function nextRound(): void {
@@ -2023,13 +2024,18 @@ $("menuGoalBtn").addEventListener("click", () => {
 $("menuLevelBtn").addEventListener("click", () => {
   closeMenu();
   const pick = (level: AILevel) => (): void => {
+    const previous = aiLevel;
     aiLevel = level;
+    // newGame refuses (bad seed): keep the old level, as no new game started.
+    if (!newGame()) {
+      aiLevel = previous;
+      return;
+    }
     try {
       localStorage.setItem(LEVEL_KEY, level);
     } catch {
       /* storage unavailable: the level lasts until reload */
     }
-    newGame();
   };
   showDialog(
     "Opponent",

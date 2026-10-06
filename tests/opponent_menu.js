@@ -25,7 +25,19 @@ async function main() {
       await page.send("Page.navigate", {
         url: `http://localhost:${PORT}/?test=1&t=${Date.now()}`,
       });
-      await sleep(400);
+      // wait until the app has started (its test hook exists), not a fixed time
+      for (let i = 0; i < 100; i++) {
+        await sleep(100);
+        if (
+          await page
+            .evalJs(
+              `!!window.__cascadeTest && !!window.__cascadeTest.getGame()`,
+            )
+            .catch(() => false)
+        )
+          return;
+      }
+      fail("the app did not start");
     };
     const label = () =>
       page.evalJs(`document.querySelector("#menuLevelBtn").textContent`);
@@ -52,6 +64,7 @@ async function main() {
     if (JSON.stringify(dlg.buttons) !== '["Novice","Intermediate","Hard"]')
       fail(`unexpected level buttons ${JSON.stringify(dlg.buttons)}`);
 
+    await page.evalJs(`window.__before = window.__cascadeTest.getGame()`);
     // Picking Hard starts a new game (round 1 again) and relabels the menu.
     await page.evalJs(
       `[...document.querySelectorAll("#dialogRoot button")].find(b => b.textContent === "Hard").click()`,
@@ -62,11 +75,26 @@ async function main() {
       fail(`label should read Opponent: Hard, got ${await label()}`);
     const stored = await page.evalJs(`localStorage.getItem("cascade.level")`);
     if (stored !== "hard") fail(`level not stored, got ${stored}`);
-    const round = await page.evalJs(
-      `window.__cascadeTest.getGame().roundNumber`,
+    // A new game: the game object is replaced, not just the label.
+    if (
+      !(await page.evalJs(`window.__cascadeTest.getGame() !== window.__before`))
+    )
+      fail("picking a level should start a new game (same game object)");
+
+    // A refused new game (bad seed) must not change the level.
+    await page.evalJs(`document.querySelector("#seedInput").value = "abc"`);
+    await openOpponent();
+    await page.evalJs(
+      `[...document.querySelectorAll("#dialogRoot button")].find(b => b.textContent === "Novice").click()`,
     );
-    if (round !== 1)
-      fail(`picking a level should start a new game, round=${round}`);
+    await sleep(200);
+    await page.evalJs(`document.querySelector("#dialogRoot .x-btn")?.click()`);
+    await page.evalJs(`document.querySelector("#menuBtn").click()`);
+    if ((await label()) !== "Opponent: Hard")
+      fail(`a refused new game changed the level to ${await label()}`);
+    if ((await page.evalJs(`localStorage.getItem("cascade.level")`)) !== "hard")
+      fail("a refused new game changed the stored level");
+    await page.evalJs(`document.querySelector("#seedInput").value = ""`);
 
     // Remembered after a reload; a junk stored value falls back to default.
     await load();
