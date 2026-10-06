@@ -109,6 +109,7 @@ function startRound(game, rng = Math.random) {
         comeOutAccum: [0, 0], // points of new melds laid THIS turn toward the 40-point come-out bar (§2.4, revised 2026-10-03: single turn, no carry-over)
         comeOutAttempt: null, // snapshot for taking this turn's under-40 melds back
         log: [],
+        undoStack: [],
         ended: false,
         endReason: null,
         roundWinner: null,
@@ -328,6 +329,7 @@ function restartTurn(game) {
     r.lastDraw = null;
     r.rowDrawsThisPart1 = 0;
     r.turnStart = null;
+    r.undoStack = [];
     r.part = start.part;
     // A restart after a pile draw has to keep the draw: take a fresh snapshot of
     // that same state, so a further restart is possible.
@@ -351,6 +353,7 @@ function undoDraw(game) {
         throw new Error("Nothing to undo.");
     const draw = r.lastDraw;
     returnTakeToRow(r, draw);
+    r.undoStack = []; // only ever reached with an empty stack; keep it consistent
     r.part = draw.partBefore; // back to where the player was before this take
     r.lastDraw = draw.previous; // step back: the take before this one is undoable next
     const later = r.comeOutAttempt?.laterTakes;
@@ -1113,6 +1116,70 @@ function rearrangeMoveCard(game, cardId, destination) {
         throw new Error("Unknown destination group.");
     }
 }
+// --- Per-turn undo (added 2026-10-06) --------------------------------------
+// Before each action of the undo-enabled seat (game.undoFor, the human), the
+// round is snapshotted; undo() puts the latest snapshot back. Snapshots are
+// only taken in Part 2, after the draw, so undo can never go back past a pile
+// draw (that would let a player peek at the pile card and then change their
+// mind). Nothing hidden changes between snapshots, so it gives no information
+// advantage. At the bottom of the stack the older "undo a cascade take"
+// (undoDraw) still applies. The log is not copied: it is truncated on restore.
+function isRecording(game) {
+    const r = game.round;
+    return game.undoFor === r.current && r.part === 2 && !r.ended;
+}
+function takeSnapshot(game) {
+    if (!isRecording(game))
+        return null;
+    const { log, undoStack, ...rest } = game.round;
+    void undoStack;
+    return {
+        state: structuredClone(rest),
+        logLength: log.length,
+    };
+}
+// Wraps an action so a snapshot taken before it is kept once it succeeds (an
+// action that throws changes nothing and leaves no entry).
+function recorded(fn) {
+    return (game, ...args) => {
+        const snap = takeSnapshot(game);
+        const out = fn(game, ...args);
+        if (snap)
+            game.round.undoStack.push(snap);
+        return out;
+    };
+}
+function canUndo(game) {
+    const r = game.round;
+    return (game.undoFor === r.current &&
+        r.part === 2 &&
+        !r.ended &&
+        !r.rearrange &&
+        r.undoStack.length > 0);
+}
+function undo(game) {
+    const r = game.round;
+    if (!canUndo(game))
+        throw new Error("Nothing to undo.");
+    const snap = r.undoStack.pop();
+    const target = r;
+    // Restore in place (the Round object itself must stay the same one: the AI
+    // keys its memory on it).
+    for (const key of Object.keys(target))
+        if (key !== "log" && key !== "undoStack")
+            delete target[key];
+    Object.assign(target, structuredClone(snap.state));
+    r.log.length = snap.logLength;
+    logMsg(game, `Player ${r.current + 1} undid their last action.`);
+}
+function cancelRearrangeRecorded(game) {
+    const r = game.round;
+    const had = isRecording(game) && !!r.rearrange;
+    cancelRearrange(game);
+    // The snapshot startRearrange took belongs to the session just cancelled.
+    if (had)
+        r.undoStack.pop();
+}
 function cancelRearrange(game) {
     const r = game.round;
     if (!r.rearrange)
@@ -1306,6 +1373,7 @@ function advanceTurn(game) {
     r.rowDrawsThisPart1 = 0;
     r.comeOutAttempt = null;
     r.turnStart = null;
+    r.undoStack = [];
 }
 // --- Round / game end ---------------------------------------------------
 function endRoundHandOut(game, winnerIdx) {
@@ -1408,7 +1476,7 @@ export const CascadeEngine = {
     canDrawFromRow,
     canDrawFromClosedPile,
     drawFromClosedPile,
-    drawFromOpenRow,
+    drawFromOpenRow: recorded(drawFromOpenRow),
     canUndoDraw,
     undoDraw,
     canRestartTurn,
@@ -1416,19 +1484,21 @@ export const CascadeEngine = {
     validateNewMeldSelection,
     autoResolveMeld,
     hasComeOut,
-    layNewMeld,
-    addToMeld,
-    swapJoker,
-    pullFromMeld,
+    layNewMeld: recorded(layNewMeld),
+    addToMeld: recorded(addToMeld),
+    swapJoker: recorded(swapJoker),
+    pullFromMeld: recorded(pullFromMeld),
     canStartRearrange,
-    startRearrange,
+    startRearrange: recorded(startRearrange),
     rearrangeState,
     rearrangeMoveCard,
-    cancelRearrange,
+    cancelRearrange: cancelRearrangeRecorded,
     commitRearrange,
     canProceedToDiscard,
     comeOutShortfall,
-    takeBackUnqualifiedMelds,
+    takeBackUnqualifiedMelds: recorded(takeBackUnqualifiedMelds),
+    canUndo,
+    undo,
     discard,
     orderedRankValue,
     solveRun,

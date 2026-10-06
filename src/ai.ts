@@ -786,6 +786,8 @@ function searchDiscard(
     for (let i = 0; i < cands.length; i++) {
       const sim = structuredClone(game) as Game;
       const simRound = sim.round as Round;
+      sim.undoFor = undefined; // playouts must not pay for undo snapshots
+      simRound.undoStack = [];
       simRound.hands[opp] = oppCards.map((c) => ({ ...c }));
       simRound.closedPile = rest.map((c) => ({ ...c }));
       CascadeEngine.discard(sim, cands[i].id);
