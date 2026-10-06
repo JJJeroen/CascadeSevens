@@ -1,7 +1,7 @@
 // Cascade Sevens — UI controller. Hotseat human (P1) vs simple AI (P2).
 // Wires DOM events to CascadeEngine calls; no rules logic lives here.
 import { CascadeEngine } from "./engine.js";
-import { CascadeAI } from "./ai.js";
+import { CascadeAI, AI_LEVELS } from "./ai.js";
 const SUIT_SYMBOL = { S: "♠", H: "♥", D: "♦", C: "♣" };
 let game = null;
 let selectedHandCardIds = new Set();
@@ -27,6 +27,23 @@ let handDisplayOrder = [];
 let autoScrollHandle = null;
 let lastOpenRowLen = 0;
 let aiDisabled = false; // only ever set via the ?test=1 hook at the bottom
+// Opponent strength, remembered across sessions (the menu's "Opponent" item).
+const LEVEL_KEY = "cascade.level";
+const LEVEL_LABELS = {
+    novice: "Novice",
+    intermediate: "Intermediate",
+    hard: "Hard",
+};
+function loadLevel() {
+    try {
+        const saved = localStorage.getItem(LEVEL_KEY);
+        return AI_LEVELS.find((l) => l === saved) ?? "intermediate";
+    }
+    catch {
+        return "intermediate";
+    }
+}
+let aiLevel = loadLevel();
 function $(id) {
     const el = document.getElementById(id);
     if (!el)
@@ -204,7 +221,7 @@ function newGame() {
         : Number(seedField);
     if (!Number.isFinite(seed)) {
         showError(`"${seedField}" isn't a valid seed -- enter a whole number, or leave it blank for a random deal.`);
-        return;
+        return false;
     }
     currentSeed = seed;
     currentRng = CascadeEngine.seededRng(seed);
@@ -218,6 +235,7 @@ function newGame() {
     resetDialogPosition($("modalBox"));
     render();
     scheduleIfAITurn();
+    return true;
 }
 function nextRound() {
     CascadeEngine.startRound(game, currentRng ?? undefined);
@@ -255,7 +273,7 @@ function scheduleIfAITurn() {
     setTimeout(() => {
         if (!isAITurnNow(g))
             return;
-        CascadeAI.takeTurn(g, { onStateChanged: render });
+        CascadeAI.takeTurn(g, { onStateChanged: render }, aiLevel);
         scheduleIfAITurn();
     }, delay);
 }
@@ -1718,6 +1736,7 @@ function renderMenuLabels() {
         return;
     $("menuRoundBtn").textContent = `Round ${g.roundNumber + 1}`;
     $("menuGoalBtn").textContent = `Goal ${g.mode === "quick" ? 300 : 1000}`;
+    $("menuLevelBtn").textContent = `Opponent: ${LEVEL_LABELS[aiLevel]}`;
     $("menuDebugBtn").textContent = `Debug: ${debugOn() ? "on" : "off"}`;
 }
 function closeMenu() {
@@ -1770,6 +1789,29 @@ $("menuGoalBtn").addEventListener("click", () => {
         { label: "300", onClick: pick("quick"), secondary: true },
         { label: "1000", onClick: pick("standard") },
     ]);
+});
+$("menuLevelBtn").addEventListener("click", () => {
+    closeMenu();
+    const pick = (level) => () => {
+        const previous = aiLevel;
+        aiLevel = level;
+        // newGame refuses (bad seed): keep the old level, as no new game started.
+        if (!newGame()) {
+            aiLevel = previous;
+            return;
+        }
+        try {
+            localStorage.setItem(LEVEL_KEY, level);
+        }
+        catch {
+            /* storage unavailable: the level lasts until reload */
+        }
+    };
+    showDialog("Opponent", "How well the AI plays. Changing it starts a new game.", AI_LEVELS.map((level) => ({
+        label: LEVEL_LABELS[level],
+        onClick: pick(level),
+        secondary: level !== aiLevel,
+    })));
 });
 $("menuHelpBtn").addEventListener("click", () => {
     closeMenu();
