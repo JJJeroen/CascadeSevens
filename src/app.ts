@@ -42,8 +42,7 @@ type DropTarget =
   | { kind: "open-row" }
   | { kind: "hand"; beforeCardId: string | null }
   | { kind: "tableau-empty" } // dropped in the tableau area but not on any meld
-  // Rearrange drafting: a group box, the "+ New group" box (or empty table
-  // space), or the draft hand.
+  // Rearrange drafting: a group box, the "+ New group" box, or the draft hand.
   | { kind: "draft-group"; groupId: string }
   | { kind: "draft-new" }
   | { kind: "draft-hand" };
@@ -1139,7 +1138,8 @@ function hitTestDrop(x: number, y: number): DropTarget | null {
         ? { kind: "draft-new" }
         : { kind: "draft-group", groupId: box.dataset.groupId as string };
     if (el.closest("#rearrangeHandPoolWrap")) return { kind: "draft-hand" };
-    if (el.closest("#tableau")) return { kind: "draft-new" };
+    // Only the visible "+ New group" box starts a group: a slightly missed
+    // drop on the gaps or empty table space snaps back instead.
     return null;
   }
   const meldBox = el.closest<HTMLElement>(".meld[data-meld-id]");
@@ -1230,6 +1230,16 @@ function resolveDrop(ds: DragState): void {
             ? "hand"
             : null;
     if (!dest) return; // dropped nowhere useful: the card snaps back
+    // Dropping a card where it already is changes nothing (it would only
+    // reorder the group, or move a lone card's box to the end).
+    const own = CascadeEngine.rearrangeState(g)?.groups.find((gr) =>
+      gr.cardIds.includes((ds.source as { cardId: string }).cardId),
+    );
+    if (
+      own &&
+      (dest === own.groupId || (dest === "new" && own.cardIds.length === 1))
+    )
+      return;
     try {
       CascadeEngine.rearrangeMoveCard(g, ds.source.cardId, dest);
       rearrangeSelectedCardId = null;

@@ -9,6 +9,7 @@ let failed = false;
 const fail = (m) => {
   console.log(`FAIL: ${m}`);
   failed = true;
+  process.exitCode = 1; // a failure that returns early must still fail the run
 };
 
 async function main() {
@@ -74,17 +75,25 @@ async function main() {
     )
       fail('the "+ New group" box is missing');
 
-    // 1. Picking a card up must be visible.
+    // 1. Picking a card up must be visible: its look must change (the base
+    // card already has an owner-stripe shadow, so "has a shadow" proves nothing).
+    const look = () =>
+      q(`(() => {
+        const c = document.querySelector('#rearrangeHandPool .card[data-card-id="9C"]');
+        const s = getComputedStyle(c);
+        return { cls: c.classList.contains("selected"), shadow: s.boxShadow, transform: s.transform };
+      })()`);
+    const plain = await look();
     await q(
       `document.querySelector('#rearrangeHandPool .card[data-card-id="9C"]').click()`,
     );
-    const sel = await q(`(() => {
-      const c = document.querySelector('#rearrangeHandPool .card[data-card-id="9C"]');
-      return { cls: c.classList.contains("selected"), shadow: getComputedStyle(c).boxShadow };
-    })()`);
-    if (!sel.cls || sel.shadow === "none")
+    const sel = await look();
+    if (
+      !sel.cls ||
+      (sel.shadow === plain.shadow && sel.transform === plain.transform)
+    )
       fail(
-        `a selected draft card needs a visible highlight: ${JSON.stringify(sel)}`,
+        `a selected draft card must look different: ${JSON.stringify({ plain, sel })}`,
       );
     await q(
       `document.querySelector('#rearrangeHandPool .card[data-card-id="9C"]').click()`,
@@ -157,6 +166,45 @@ async function main() {
     if (JSON.stringify(await poolIds()) !== '["9C","KH"]')
       fail(
         `the draft hand should be 9C, KH, got ${JSON.stringify(await poolIds())}`,
+      );
+
+    // 4b. Dropping a card on its own group changes nothing (no reordering).
+    const order = () =>
+      q(
+        `[...document.querySelectorAll("#tableau .meld[data-group-id]:not([data-group-id='new']) .card")].map(c => c.dataset.cardId).join(",")`,
+      );
+    const beforeOrder = await order();
+    await drag(
+      card("9S", "#tableau"),
+      "#tableau .meld[data-group-id]:not([data-group-id='new'])",
+    );
+    if ((await order()) !== beforeOrder)
+      fail(
+        `dropping a card on its own group must not reorder it: ${beforeOrder} -> ${await order()}`,
+      );
+
+    // 4c. Empty table space is not a "+ New group" target: the card snaps back.
+    const emptyPoint =
+      await q(`(() => { const b = document.querySelector("#tableau").getBoundingClientRect();
+      return { x: b.right - 8, y: b.top + 8 }; })()`);
+    const groupsBefore = JSON.stringify(await groups());
+    {
+      const from = await point(card("KH", "#rearrangeHandPool"), true);
+      await send("mouseMoved", from.x, from.y);
+      await send("mousePressed", from.x, from.y);
+      await sleep(260);
+      for (let i = 1; i <= 8; i++)
+        await send(
+          "mouseMoved",
+          from.x + ((emptyPoint.x - from.x) * i) / 8,
+          from.y + ((emptyPoint.y - from.y) * i) / 8,
+        );
+      await send("mouseReleased", emptyPoint.x, emptyPoint.y);
+      await sleep(150);
+    }
+    if (JSON.stringify(await groups()) !== groupsBefore)
+      fail(
+        `a drop on empty table space must not start a group: ${groupsBefore} -> ${JSON.stringify(await groups())}`,
       );
 
     // 5. Letting go on nothing changes nothing.

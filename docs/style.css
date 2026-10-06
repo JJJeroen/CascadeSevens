@@ -351,7 +351,10 @@ h2 {
 }
 /* The card picked up in a rearrange draft (the hand version of this lives
    under .hand, which draft cards are not inside). Same ring as a selected
-   hand card, plus a lift. */
+   hand card, plus a lift. Unlike the hand (which lifts by margin so the card
+   stays tucked under its neighbour), a transform is deliberate here: the
+   picked-up card should paint above the overlapping cards of its group so it
+   is easy to see. */
 #tableau .card.selected,
 #rearrangeHandPool .card.selected {
   box-shadow:

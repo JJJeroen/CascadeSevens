@@ -990,8 +990,8 @@ function hitTestDrop(x, y) {
                 : { kind: "draft-group", groupId: box.dataset.groupId };
         if (el.closest("#rearrangeHandPoolWrap"))
             return { kind: "draft-hand" };
-        if (el.closest("#tableau"))
-            return { kind: "draft-new" };
+        // Only the visible "+ New group" box starts a group: a slightly missed
+        // drop on the gaps or empty table space snaps back instead.
         return null;
     }
     const meldBox = el.closest(".meld[data-meld-id]");
@@ -1079,6 +1079,12 @@ function resolveDrop(ds) {
                     : null;
         if (!dest)
             return; // dropped nowhere useful: the card snaps back
+        // Dropping a card where it already is changes nothing (it would only
+        // reorder the group, or move a lone card's box to the end).
+        const own = CascadeEngine.rearrangeState(g)?.groups.find((gr) => gr.cardIds.includes(ds.source.cardId));
+        if (own &&
+            (dest === own.groupId || (dest === "new" && own.cardIds.length === 1)))
+            return;
         try {
             CascadeEngine.rearrangeMoveCard(g, ds.source.cardId, dest);
             rearrangeSelectedCardId = null;
