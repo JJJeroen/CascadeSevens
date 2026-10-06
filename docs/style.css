@@ -340,6 +340,28 @@ h2 {
   border-style: solid;
   border-color: #d9534f;
 }
+/* "+ New group" target at the end of the draft groups. */
+.meld.draft-new {
+  align-items: center;
+  justify-content: center;
+  min-width: 90px;
+  min-height: 56px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+/* The card picked up in a rearrange draft (the hand version of this lives
+   under .hand, which draft cards are not inside). Same ring as a selected
+   hand card, plus a lift. Unlike the hand (which lifts by margin so the card
+   stays tucked under its neighbour), a transform is deliberate here: the
+   picked-up card should paint above the overlapping cards of its group so it
+   is easy to see. */
+#tableau .card.selected,
+#rearrangeHandPool .card.selected {
+  box-shadow:
+    inset 0 -5px 0 var(--owner, transparent),
+    0 0 0 3px var(--accent);
+  transform: translateY(-6px);
+}
 /* Compact melds: the shared table is where cards pile up fastest, so meld
    cards are smaller than hand cards and overlap each other, like the other
    rummy/gin apps do for laid-down sets. Rank/suit sit in the top-left
@@ -563,7 +585,8 @@ h2 {
    confirmation dialog without slowing the gesture down. */
 .meld.drag-over,
 #openRow.drag-over,
-#hand.drag-over {
+#hand.drag-over,
+#rearrangeHandPoolWrap.drag-over {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
