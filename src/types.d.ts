@@ -105,6 +105,12 @@ export type RoundPart = "turn0" | 1 | 2 | 3;
 
 export type EndReason = "handout" | "pile-empty";
 
+// One step of the player's per-turn undo history (see recorded() in engine.ts).
+export interface UndoEntry {
+  state: Record<string, unknown>; // the round as it was, without log and undoStack
+  logLength: number; // log lines to keep when restoring
+}
+
 export interface Round {
   closedPile: Card[];
   openRow: Card[];
@@ -130,6 +136,9 @@ export interface Round {
   // What to restore if the player takes this turn's under-40 melds back.
   comeOutAttempt: ComeOutAttempt | null;
   log: string[];
+  // Snapshots taken before each of the undo-enabled player's actions this turn
+  // (Part 2 only, so never back past a draw); empty for everyone else.
+  undoStack: UndoEntry[];
   ended: boolean;
   endReason: EndReason | null;
   roundWinner: PlayerIdx | null;
@@ -147,6 +156,9 @@ export interface Game {
   winner: PlayerIdx | null;
   round: Round | null;
   nextRoundStarter: PlayerIdx;
+  // The seat whose actions can be undone (the app sets it to the human).
+  // Unset for AI-vs-AI games and simulations, which then pay nothing.
+  undoFor?: PlayerIdx;
 }
 
 // --- Meld resolution result shapes -----------------------------------------

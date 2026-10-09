@@ -322,6 +322,7 @@ function newGame(): boolean {
   currentSeed = seed;
   currentRng = CascadeEngine.seededRng(seed);
   game = CascadeEngine.newGame(mode, currentRng);
+  game.undoFor = 0; // the human (seat 0) can undo within a turn
   CascadeEngine.startRound(game, currentRng);
   selectedHandCardIds.clear();
   targetedMeldId = null;
@@ -569,6 +570,7 @@ function toggleTurn0Take(): void {
 function canAddToTableAfterTake(g: Game, card: Card): boolean {
   try {
     const sim = structuredClone(g) as Game;
+    sim.undoFor = undefined; // a throwaway copy: no undo snapshots
     CascadeEngine.drawFromOpenRow(sim, card.id);
     const simRound = sim.round as Round;
     if (!simRound.comeOut[simRound.current]) return false;
@@ -1489,7 +1491,7 @@ function renderControls(): void {
           ? "Joker (you must use it this turn)"
           : `${label} (must lay it in a series)`;
     });
-    obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : CascadeEngine.canRestartTurn(g) ? ' (stuck? tap "Start turn over")' : ""}`;
+    obligEl.textContent = `Owed this turn: ${parts.join(", ")}${CascadeEngine.canUndo(g) || CascadeEngine.canUndoDraw(g) ? " (stuck? tap the undo button by your hand)" : CascadeEngine.canRestartTurn(g) ? ' (stuck? tap "Start turn over")' : ""}`;
   } else {
     obligEl.hidden = true;
   }
@@ -1529,7 +1531,11 @@ function renderControls(): void {
       r.pendingObligations.length > 0
     );
   $<HTMLButtonElement>("undoDrawBtn").disabled =
-    rearranging || !(isHumanTurn && CascadeEngine.canUndoDraw(g));
+    rearranging ||
+    !(
+      isHumanTurn &&
+      (CascadeEngine.canUndo(g) || CascadeEngine.canUndoDraw(g))
+    );
   $<HTMLButtonElement>("clearSelectionBtn").disabled =
     rearranging || !(isHumanTurn && (selected.length > 0 || targetedMeldId));
   $<HTMLButtonElement>("layMeldBtn").disabled =
@@ -1653,8 +1659,13 @@ $("restartTurnBtn").addEventListener("click", () => {
 
 $("undoDrawBtn").addEventListener("click", () => {
   try {
-    CascadeEngine.undoDraw(game as Game);
+    const g = game as Game;
+    // Step back through this turn's actions first; at the bottom, the older
+    // "put the cascade take back".
+    if (CascadeEngine.canUndo(g)) CascadeEngine.undo(g);
+    else CascadeEngine.undoDraw(g);
     selectedHandCardIds.clear();
+    targetedMeldId = null;
     afterHumanAction();
   } catch (e) {
     showError(errMsg(e));
@@ -2133,6 +2144,7 @@ $("menuHelpBtn").addEventListener("click", () => {
       "Lay: put 3 or more cards on the table as a series (the same number in different suits, or a run in one suit). To come out, the series you lay in one turn must be worth 40 points or more (ace 25, 10-K 10, 2-9 5, joker 50). If they are worth less, you can lay more or take them back.",
       "Moving cards: drag back a series card you laid yourself (an end card of a run, or any card that leaves a valid series). To regroup any card on the table, even the AI's, use Rearrange… as long as every series is valid when you commit.",
       "Points: the coloured bar at the bottom of each card shows who scores it: orange for you, blue for the AI (the same colours as the scores). If you swap a joker out of the AI's series, your replacement card stays with the AI; the joker is yours to play.",
+      "Undo: the arrow by your hand takes back your last move this turn, as often as you like. It stops at your draw: once you have drawn from the pile you cannot go back before it.",
       "Discard: drag a card onto the cascade to end your turn. Whoever empties their hand first ends the round. The first player past the goal (menu) wins the game.",
     ].join("\n\n"),
   );
