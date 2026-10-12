@@ -79,7 +79,7 @@ export async function connect(browserBin, cdpPort) {
   );
   try {
     let target = null;
-    for (let i = 0; i < 40 && !target; i++) {
+    for (let i = 0; i < 120 && !target; i++) {
       try {
         target = await (
           await fetch(`http://127.0.0.1:${cdpPort}/json/new?about:blank`, {
