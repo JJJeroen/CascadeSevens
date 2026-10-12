@@ -1,5 +1,5 @@
 {
-  // Serves the committed docs/ build as a static site on Cloudflare.
+  // (preview test) Serves the committed docs/ build as a static site on Cloudflare.
   // Non-main branches get a preview URL (Workers Builds "preview command").
   // "name" must match the Worker/project name in the Cloudflare dashboard.
   "name": "cascadesevens",
