@@ -57,3 +57,12 @@ Open `docs/index.html` through a local web server to try the game
 
 The version shown in the game is `0.<number of the last merged PR>`. It is
 written by `npm run build`, so you don't set it by hand.
+
+## Known quirks
+
+- **"Workers Builds: cascadesevens" shows a red X on PRs. Ignore it.** It is a
+  leftover from an old Cloudflare setup (the Worker no longer exists) and is
+  not a required check. The checks that matter are `test` and "Cloudflare Pages".
+- **The browser tests sometimes fail at random** with "Chromium's CDP endpoint
+  never became reachable". If that is the only failure, re-run the failed job
+  from the PR's Checks tab.
