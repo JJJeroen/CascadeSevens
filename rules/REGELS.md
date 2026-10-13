@@ -98,7 +98,7 @@ Jokers zijn vanaf het begin wild inzetbaar in elke nieuwe of bestaande serie.
 Eenmalig, vóór de normale beurten.
 
 1. De beginnende speler mag de losse startkaart pakken (vrijgesteld van de leg-verplichting en van de uitkom-drempel) en wisselt hem direct voor één kaart uit de hand. Dan stopt Beurt 0 meteen.
-2. Zo niet: de andere speler krijgt dezelfde kans op de sartkaart, met dezelfde wissel-verplichting.
+2. Zo niet: de andere speler krijgt dezelfde kans op de startkaart, met dezelfde wissel-verplichting.
 3. Als de andere speler in stap 2 de startkaart wisselde, dan krijgt de beginnende speler één laatste keuze om de kaart in de cascade te wisselen of niet. Daarna stopt Beurt 0.
 4. Als de andere speler in stap 2 kiest om niet te wisselen of de beginnende speler kiest in stap 3 om niet te wisselen, dan speelt de beginnende speler de beurt.
 
