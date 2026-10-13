@@ -16,7 +16,7 @@ Termen volgen de app: een groep kaarten op tafel heet een **serie**.
 
 ## Doel
 
-Raak als eerste al je kaarten kwijt door ze in series op tafel te leggen. Je scoort punten voor de kaarten die jij legt en verliest punten voor kaarten die je op het eind nog in je hand hebt. Wie als eerste **meer dan 1000 punten** heeft (en voorstaat), wint het spel. (Modus Quick: 300.)
+Raak als eerste al je kaarten kwijt door ze in series op tafel te leggen. Je scoort punten voor de kaarten die jij legt en verliest punten voor kaarten die je op het eind nog in je hand hebt. Wie als eerste **meer dan 1000 punten** heeft (en voor staat), wint het spel. (Modus Quick: 300.)
 
 ## Wat is een serie?
 
@@ -24,7 +24,7 @@ Een serie is minstens **3 kaarten** van één van deze soorten:
 
 - **Set:** gelijke rang, bijvoorbeeld 7♥ 7♠ 7♦.
 - **Reeks:** oplopend, zelfde kleur, bijvoorbeeld 4♣ 5♣ 6♣. Een aas staat aan één kant (A-2-3 of Q-K-A), nooit rond.
-- **Joker:** is wild, hij mag elke kaart vervangen.
+- **Joker:** is wild, hij mag elke kaart vervangen in een serie.
 
 ## Kaartwaarden
 
@@ -37,17 +37,17 @@ Een serie is minstens **3 kaarten** van één van deze soorten:
 
 ## Een beurt in drie stappen
 
-1. **Trekken (verplicht).** Tik op de gesloten stapel voor één kaart, of pak kaarten van de open rij (de "cascade").
+1. **Trekken (verplicht).** Tik op de gesloten stapel voor één kaart, of pak kaarten van de "cascade" (de open rij).
 2. **Leggen (optioneel).** Leg series, voeg kaarten toe aan series op tafel (ook die van de tegenstander), en meer (zie Deel B).
-3. **Afgooien (verplicht).** Leg één kaart open op de open rij. Heb je daarna geen kaarten meer, dan win je de ronde.
+3. **Afgooien (verplicht).** Leg één kaart open op de cascade. Heb je daarna geen kaarten meer, dan win je de ronde.
 
 ## Uitkomen: je eerste serie(s) van de ronde
 
 Je moet eerst **uitkomen**: leg in één beurt nieuwe series uit je hand die samen **minstens 40 punten** waard zijn. Tot die tijd mag je alleen nieuwe series leggen, niets toevoegen aan bestaande.
 
-## Van de open rij pakken
+## Van de cascade pakken
 
-Je mag een kaart uit de open rij pakken, maar je krijgt dan ook **alle kaarten die erna zijn neergelegd**. De kaart waar je naar greep **moet** je nog diezelfde beurt in een serie leggen.
+Je mag een kaart uit de cascade pakken, maar je krijgt dan ook **alle kaarten die erna zijn neergelegd**. De kaart waar je naar greep **moet** je nog diezelfde beurt in een serie leggen.
 Voorbeeld: ligt er A-J-K en je pakt de J, dan krijg je J en K, en moet je de J leggen.
 
 ## Einde van de ronde en score
@@ -80,8 +80,8 @@ Jokers zijn vanaf het begin wild inzetbaar in elke nieuwe of bestaande serie.
 
 ## Begrippen
 
-- **Gesloten stapel**: de dichte stapel om van te trekken.
-- **Open rij** (de "cascade"): de rij open kaarten waarin elke nieuwe kaart gedeeltelijk over de vorige ligt. Alle kaarten blijven deels zichtbaar.
+- **Gesloten stapel**: de dichte stapel kaarten om van te trekken.
+- **Cascade**: de rij open kaarten waarin elke nieuwe kaart gedeeltelijk over de vorige ligt. Alle kaarten blijven deels zichtbaar.
 - **Tafel**: alle series, van beide spelers. Series staan per speler gegroepeerd, maar beide spelers mogen aan alle series toevoegen.
 - **Uitkomen**: je eerste series van de ronde leggen (zie "Uitkomen").
 - **Serie**: een set of een reeks op tafel.
@@ -90,33 +90,33 @@ Jokers zijn vanaf het begin wild inzetbaar in elke nieuwe of bestaande serie.
 
 1. Schud alle 54 kaarten.
 2. Deel 7 kaarten per speler.
-3. Leg de bovenste kaart van de rest open: de eerste kaart van de open rij. De rest is de gesloten stapel.
-4. Wie begint: ronde 1 wordt met een muntworp bepaald; daarna wisselt de beginnende speler elke ronde, ongeacht wie de vorige ronde won.
+3. Leg 1 kaart van de rest open; dit is de eerste kaart van de cascade. De rest is de gesloten stapel.
+4. Wie begint: speler 1 begint ronde 1 ; daarna wisselt de beginnende speler elke ronde.
 
-## Turn 0 — de startkaart-uitwisseling
+## Beurt 0 — de startkaart-uitwisseling
 
 Eenmalig, vóór de normale beurten.
 
-1. De beginnende speler mag de losse startkaart pakken (vrijgesteld van de leg-verplichting en van de uitkom-drempel) en wisselt hem direct voor één kaart uit de hand. Dan stopt Turn 0 meteen.
-2. Zo niet: de andere speler krijgt dezelfde kans op dezelfde kaart, met dezelfde wissel-verplichting.
-3. Nam de andere speler in stap 2 wél, terwijl de beginnende speler in stap 1 weigerde: dan krijgt de beginnende speler één "troostblik" op de nieuw neergelegde kaart (weer wisselen-of-niet). Daarna stopt Turn 0.
-4. Weigeren beiden, dan gebeurt er niets en begint Turn 1 gewoon met de beginnende speler.
+1. De beginnende speler mag de losse startkaart pakken (vrijgesteld van de leg-verplichting en van de uitkom-drempel) en wisselt hem direct voor één kaart uit de hand. Dan stopt Beurt 0 meteen.
+2. Zo niet: de andere speler krijgt dezelfde kans op de startkaart, met dezelfde wissel-verplichting.
+3. Als de andere speler in stap 2 de startkaart wisselde, dan krijgt de beginnende speler één laatste keuze om de kaart in de cascade te wisselen of niet. Daarna stopt Beurt 0.
+4. Als de andere speler in stap 2 kiest om niet te wisselen of de beginnende speler kiest in stap 3 om niet te wisselen, dan speelt de beginnende speler de beurt.
 
-**Wie speelt Turn 1?** De tegenstander van wie de laatste geaccepteerde wissel deed. Heeft niemand geaccepteerd, dan begint de beginnende speler.
+**Wie speelt Beurt 1?** De tegenstander van de speler, die bij Beurt 0 als laatste koos om de kaart te wisselen. Heeft niemand gewisseld, dan begint de beginnende speler.
 
 ## Een beurt: 3 delen, altijd in deze volgorde
 
 ### Deel 1 — Trekken (verplicht, kies één)
 
-**A. Eén kaart van de gesloten stapel.** Dit beëindigt Deel 1. Kan alleen als je deze beurt nog niet van de open rij pakte.
+**A. Eén kaart van de gesloten stapel.** Dit beëindigt Deel 1. Kan alleen als je deze beurt nog niet van de cascade pakte.
 
-**B. Van de open rij pakken.** Dit kan elke beurt, ook als je nog niet bent uitgekomen.
+**B. Van de cascade pakken.** Dit kan elke beurt, ook als je nog niet bent uitgekomen.
 
-- Je kiest **één kaart** in de rij en neemt die kaart **plus alle kaarten die er later bovenop zijn gelegd**. Je pakt dus nooit "de hele rij", tenzij je de allereerste kaart kiest.
+- Je kiest **één kaart** in de cascade en neemt die kaart **plus alle kaarten die er later bovenop zijn gelegd**. Je pakt dus nooit "de hele cascade", tenzij je de allereerste kaart kiest.
   Voorbeeld: ligt er A-J-K en je pakt de J, dan krijg je J en K; de A blijft liggen.
 - De **onderste** kaart van wat je pakte (de kaart waar je naar greep) **moet** je deze beurt in een serie op tafel leggen. Je mag hem **niet** terugleggen als afgooi-kaart. De overige kaarten die je meenam zijn vrij.
-- Zodra je van de rij pakt, is de gesloten stapel dicht voor de rest van de beurt.
-- Je mag **meerdere keren** van de rij pakken. Alleen de **laatste** pak-actie levert de verplichting op; een eerdere verplichting vervalt.
+- Zodra je van de cascade pakt, is de gesloten stapel dicht voor de rest van de beurt.
+- Je mag **meerdere keren** van de cascade pakken. Alleen de **laatste** pak-actie levert de verplichting op; een eerdere verplichting vervalt.
 - Je mag ook **pakken, leggen, en dan weer pakken**: een volgende pak-actie kan ook in Deel 2, nadat je al series hebt gelegd.
 - Kun je de verplichte kaart niet leggen? Dan kun je het pakken ongedaan maken (zolang je nog niets anders deed) en van de gesloten stapel trekken.
 
@@ -126,18 +126,18 @@ Zolang je **niet bent uitgekomen**, mag je alleen **nieuwe series uit je hand le
 
 - **Een nieuwe serie leggen** uit je hand.
 - **Kaart(en) toevoegen aan een bestaande serie** op tafel, van jezelf of van de tegenstander. Bij een reeks mag een toevoeging een joker die erin ligt verschuiven om ruimte te maken.
-- **Eigen kaarten terugtrekken** uit een serie en elders neerleggen. Alleen kaarten die jij zelf legde. Elke serie die overblijft moet weer geldig zijn (3+ kaarten) of helemaal leeg; een reeks mag je niet in het midden splitsen.
+- **Eigen kaarten terugtrekken** uit een serie en elders neerleggen. Alleen kaarten die jij zelf legde in die beurt. Elke serie die overblijft moet weer geldig zijn (3+ kaarten) of helemaal leeg; een reeks mag je niet in het midden splitsen.
 - **Volledig herschikken**: alle kaarten op tafel (van beide spelers) plus je eigen hand vrij hergroeperen, ook tijdelijk ongeldig. Pas bij "commit" wordt alles gecontroleerd; klopt er iets niet, dan zie je wat en kun je doorgaan of annuleren. Kaarten die al op tafel lagen houden hun oorspronkelijke eigenaar.
 - **Een joker inwisselen** voor de echte kaart die hij vervangt. De vrijgekomen joker moet je diezelfde beurt weer in een serie leggen. Onbeperkt vaak herhaalbaar. De kaart waarmee je wisselt blijft tellen voor de eigenaar van de joker-plek; de joker die je pakt telt voor jou zodra je hem speelt.
 
 Een leg-actie mag je hand **nooit** naar 0 kaarten brengen: je moet altijd een kaart overhouden om af te gooien.
 Een actie mag je hand ook niet op of onder het aantal nog openstaande verplichte kaarten brengen (dat zou een dood punt opleveren).
 
-**Ongedaan maken.** De pijl linksonder neemt je laatste actie van deze beurt terug, en kan herhaald worden: een serie leggen, een kaart toevoegen, kaarten terugtrekken, een jokerwissel, een herschik-sessie (terug naar vóór de sessie), series terugnemen onder de 40, en een rij-pak ná het leggen. Het stopt bij het trekken: na een kaart van de gesloten stapel kun je niet verder terug dan die kaart.
+**Ongedaan maken.** De pijl linksonder neemt je laatste actie van deze beurt terug, en kan herhaald worden: een serie leggen, een kaart toevoegen, kaarten terugtrekken, een jokerwissel, een herschik-sessie (terug naar vóór de sessie), series terugnemen onder de 40, en een cascade-pak ná het leggen. Het stopt bij het trekken: na een kaart van de gesloten stapel kun je niet verder terug dan die kaart.
 
 ### Deel 3 — Afgooien (verplicht)
 
-- Leg één kaart uit je hand open neer, gedeeltelijk over de laatste kaart van de open rij.
+- Leg één kaart uit je hand open neer, gedeeltelijk over de laatste kaart van de cascade.
 - Voor je mag afgooien moet je alle verplichte kaarten hebben gelegd.
 - Een ronde eindigt uitsluitend hier (nooit midden in Deel 2).
 
