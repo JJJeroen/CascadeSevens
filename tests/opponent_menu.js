@@ -66,10 +66,36 @@ async function main() {
       fail(`unexpected level buttons ${JSON.stringify(dlg.buttons)}`);
 
     await page.evalJs(`window.__before = window.__cascadeTest.getGame()`);
-    // Picking Hard starts a new game (round 1 again) and relabels the menu.
-    await page.evalJs(
-      `[...document.querySelectorAll("#dialogRoot button")].find(b => b.textContent === "Hard").click()`,
-    );
+    const tapButton = (text) =>
+      page.evalJs(
+        `[...document.querySelectorAll("#dialogRoot button")].find(b => b.textContent === ${JSON.stringify(text)}).click()`,
+      );
+    const dialogTitle = () =>
+      page.evalJs(
+        `document.querySelector("#dialogRoot").hidden ? null : document.querySelector("#dialogRoot .dialog-title").textContent`,
+      );
+    // Picking Hard mid-game asks first; Cancel keeps the game and the level.
+    await tapButton("Hard");
+    await sleep(100);
+    if ((await dialogTitle()) !== "Start a new game?")
+      fail(
+        `changing the level mid-game should ask first, got ${await dialogTitle()}`,
+      );
+    await tapButton("Cancel");
+    await sleep(100);
+    if (
+      !(await page.evalJs(`window.__cascadeTest.getGame() === window.__before`))
+    )
+      fail("Cancel must keep the game in progress");
+    await page.evalJs(`document.querySelector("#menuBtn").click()`);
+    if ((await label()) !== "Opponent: Intermediate")
+      fail(`Cancel must keep the level, got ${await label()}`);
+    await page.evalJs(`document.querySelector("#menuBtn").click()`); // close
+    // Confirming starts a new game (round 1 again) and relabels the menu.
+    await openOpponent();
+    await tapButton("Hard");
+    await sleep(100);
+    await tapButton("New game");
     await sleep(200);
     await page.evalJs(`document.querySelector("#menuBtn").click()`);
     if ((await label()) !== "Opponent: Hard")
@@ -105,13 +131,29 @@ async function main() {
       !(await page.evalJs(`window.__cascadeTest.getGame() === window.__before`))
     )
       fail("tapping the current goal must not start a new game");
+    // Changing the goal mid-game asks first; Cancel keeps the game.
+    await page.evalJs(`document.querySelector("#menuBtn").click()`);
+    await page.evalJs(`document.querySelector("#menuGoalBtn").click()`);
+    await sleep(100);
+    await tapButton("300");
+    await sleep(100);
+    if ((await dialogTitle()) !== "Start a new game?")
+      fail(
+        `changing the goal mid-game should ask first, got ${await dialogTitle()}`,
+      );
+    await tapButton("Cancel");
+    await sleep(100);
+    if (
+      !(await page.evalJs(`window.__cascadeTest.getGame() === window.__before`))
+    )
+      fail("Cancel on the goal question must keep the game in progress");
 
     // A refused new game (bad seed) must not change the level.
     await page.evalJs(`document.querySelector("#seedInput").value = "abc"`);
     await openOpponent();
-    await page.evalJs(
-      `[...document.querySelectorAll("#dialogRoot button")].find(b => b.textContent === "Novice").click()`,
-    );
+    await tapButton("Novice");
+    await sleep(100);
+    await tapButton("New game");
     await sleep(200);
     await page.evalJs(`document.querySelector("#dialogRoot .x-btn")?.click()`);
     await page.evalJs(`document.querySelector("#menuBtn").click()`);
