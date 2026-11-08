@@ -82,6 +82,30 @@ async function main() {
     )
       fail("picking a level should start a new game (same game object)");
 
+    // Tapping the level you already have just closes the dialog: no new game.
+    await page.evalJs(`window.__before = window.__cascadeTest.getGame()`);
+    await openOpponent();
+    await page.evalJs(
+      `[...document.querySelectorAll("#dialogRoot button")].find(b => b.textContent === "Hard").click()`,
+    );
+    await sleep(200);
+    if (
+      !(await page.evalJs(`window.__cascadeTest.getGame() === window.__before`))
+    )
+      fail("tapping the current level must not start a new game");
+    // Same for the goal you already have (1000).
+    await page.evalJs(`document.querySelector("#menuBtn").click()`);
+    await page.evalJs(`document.querySelector("#menuGoalBtn").click()`);
+    await sleep(100);
+    await page.evalJs(
+      `[...document.querySelectorAll("#dialogRoot button")].find(b => b.textContent === "1000").click()`,
+    );
+    await sleep(200);
+    if (
+      !(await page.evalJs(`window.__cascadeTest.getGame() === window.__before`))
+    )
+      fail("tapping the current goal must not start a new game");
+
     // A refused new game (bad seed) must not change the level.
     await page.evalJs(`document.querySelector("#seedInput").value = "abc"`);
     await openOpponent();

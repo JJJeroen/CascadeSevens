@@ -1907,18 +1907,27 @@ $("menuRoundBtn").addEventListener("click", () => {
 });
 $("menuGoalBtn").addEventListener("click", () => {
     closeMenu();
+    const current = game.mode;
     const pick = (mode) => () => {
+        if (mode === current)
+            return; // the goal you already have: just close
         $("modeSelect").value = mode;
         newGame();
     };
     showDialog("Game goal", "First to pass the goal wins. Changing it starts a new game.", [
-        { label: "300", onClick: pick("quick"), secondary: true },
-        { label: "1000", onClick: pick("standard") },
+        { label: "300", onClick: pick("quick"), secondary: current !== "quick" },
+        {
+            label: "1000",
+            onClick: pick("standard"),
+            secondary: current !== "standard",
+        },
     ]);
 });
 $("menuLevelBtn").addEventListener("click", () => {
     closeMenu();
     const pick = (level) => () => {
+        if (level === aiLevel)
+            return; // the level you already have: just close
         const previous = aiLevel;
         aiLevel = level;
         // newGame refuses (bad seed): keep the old level, as no new game started.
