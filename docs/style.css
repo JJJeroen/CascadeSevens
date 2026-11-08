@@ -239,6 +239,11 @@ input {
   font-size: 0.7rem;
   color: var(--muted);
 }
+/* What the AI just did, on its own line above "Your turn ...". */
+.ai-move {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+}
 
 /* --- Bottom bar: undo, contextual actions, your score ------------------ */
 .bottom-bar {

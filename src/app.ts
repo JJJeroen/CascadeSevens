@@ -346,6 +346,7 @@ function newGame(): boolean {
   targetedMeldId = null;
   turn0UiMode = "idle";
   handDisplayOrder = [];
+  lastAiMove = null;
   hideBalloon(); // don't carry a leftover note into the new game
   resetDialogPosition($("modalBox"));
   render();
@@ -359,6 +360,7 @@ function nextRound(): void {
   targetedMeldId = null;
   turn0UiMode = "idle";
   handDisplayOrder = [];
+  lastAiMove = null;
   hideBalloon();
   resetDialogPosition($("modalBox"));
   render();
@@ -389,9 +391,106 @@ function scheduleIfAITurn(): void {
   const delay = g.round?.part === "turn0" ? 500 : 600;
   setTimeout(() => {
     if (!isAITurnNow(g)) return;
-    CascadeAI.takeTurn(g, { onStateChanged: render }, aiLevel);
+    playAiTurn(g);
     scheduleIfAITurn();
   }, delay);
+}
+
+function playAiTurn(g: Game): void {
+  const before = g.round?.part !== "turn0" ? snapTable(g) : null;
+  CascadeAI.takeTurn(g, { onStateChanged: render }, aiLevel);
+  if (before && game === g) {
+    lastAiMove = describeAiMove(before, snapTable(g));
+    render();
+  }
+}
+
+// --- "What the AI just did" line -------------------------------------------
+// Compares the table before and after the AI's turn (rather than parsing the
+// engine's log text): "AI drew from the pile, laid 10♣ J♣ Q♣ K♣ and
+// discarded Q♠."
+let lastAiMove: string | null = null;
+
+interface TableSnap {
+  pile: number;
+  row: string[];
+  aiHand: string[];
+  melds: { id: string; slots: { id: string; owner: PlayerIdx }[] }[];
+  cards: Map<string, Card>;
+  ended: boolean;
+}
+
+function snapTable(g: Game): TableSnap {
+  const r = g.round as Round;
+  const cards = new Map<string, Card>();
+  for (const c of [...r.openRow, ...r.hands[1]]) cards.set(c.id, c);
+  const melds = r.tableau.map((m) => ({
+    id: m.id,
+    slots: m.slots.map((s) => {
+      cards.set(s.card.id, s.card);
+      return { id: s.card.id, owner: s.ownerId };
+    }),
+  }));
+  return {
+    pile: r.closedPile.length,
+    row: r.openRow.map((c) => c.id),
+    aiHand: r.hands[1].map((c) => c.id),
+    melds,
+    cards,
+    ended: r.ended,
+  };
+}
+
+function describeAiMove(b: TableSnap, a: TableSnap): string | null {
+  const name = (id: string): string => {
+    const c = a.cards.get(id) ?? b.cards.get(id);
+    if (!c) return id;
+    return c.rank === "JOKER" ? "JK" : cardText(c);
+  };
+  const ownerBefore = new Map<string, PlayerIdx>();
+  for (const m of b.melds)
+    for (const s of m.slots) ownerBefore.set(s.id, s.owner);
+  const meldsBefore = new Set(b.melds.map((m) => m.id));
+  const steps: string[] = [];
+
+  const taken = b.row.filter((id) => !a.row.includes(id));
+  if (taken.length === 1) steps.push(`took ${name(taken[0])} from the cascade`);
+  else if (taken.length > 1)
+    steps.push(
+      `took ${taken.length} cards from the cascade (${name(taken[0])} and up)`,
+    );
+  else if (a.pile < b.pile) steps.push("drew from the pile");
+
+  const swapped = [...ownerBefore].filter(
+    ([id, owner]) =>
+      owner === 0 &&
+      b.cards.get(id)?.rank === "JOKER" &&
+      (a.aiHand.includes(id) ||
+        a.melds.some((m) => m.slots.some((s) => s.id === id && s.owner === 1))),
+  );
+  if (swapped.length) steps.push("swapped out your joker");
+
+  const added: string[] = [];
+  for (const m of a.melds) {
+    const fresh = m.slots
+      .filter((s) => s.owner === 1 && ownerBefore.get(s.id) !== 1)
+      .map((s) => s.id);
+    if (!fresh.length) continue;
+    if (meldsBefore.has(m.id)) added.push(...fresh);
+    else steps.push(`laid ${fresh.map(name).join(" ")}`);
+  }
+  if (added.length) steps.push(`added ${added.map(name).join(" ")}`);
+
+  const top = a.row[a.row.length - 1];
+  const discarded = top !== undefined && !b.row.includes(top) ? top : null;
+  if (!steps.length && !discarded) return null;
+  let line = `AI ${steps.join(", ")}`;
+  if (discarded)
+    line += steps.length
+      ? ` and discarded ${name(discarded)}`
+      : `discarded ${name(discarded)}`;
+  if (a.ended && !b.ended) line += " — round over";
+  return `${line}.`;
 }
 
 // --- Rendering -------------------------------------------------------------
@@ -1509,6 +1608,9 @@ function renderControls(): void {
       ? ` (laid ${r.comeOutAccum[0]} of the 40 needed to come out; 40 or more in one turn)`
       : " (not come out yet: lay 40 or more in one turn)"
     : "";
+  const moveEl = $("aiMoveLine");
+  moveEl.textContent = lastAiMove ?? "";
+  moveEl.hidden = !lastAiMove || g.gameOver;
   $("turnLabel").textContent = g.gameOver
     ? "Game over"
     : r.ended
@@ -2249,6 +2351,10 @@ if (new URLSearchParams(location.search).has("test")) {
     disableAI: () => {
       aiDisabled = true;
     },
+    engine: CascadeEngine,
+    snapTable,
+    describeAiMove,
+    aiTurn: () => playAiTurn(game as Game), // one AI turn now, even with the AI timer off
   };
 }
 
