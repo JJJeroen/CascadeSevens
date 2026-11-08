@@ -119,6 +119,7 @@ function makeRandomState(rng) {
       comeOut: [true, true],
       part: 2,
       pendingObligations: [],
+      owedThisTurn: [],
       rowObligationCardId: null,
       rearrange: null,
       current,

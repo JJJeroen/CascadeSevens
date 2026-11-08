@@ -54,11 +54,21 @@ export interface Turn0State {
   lastAcceptor: PlayerIdx | null;
 }
 
+// A card the current player owes this turn (the newest cascade take's bottom
+// card, or a swapped-out joker), kept until the turn ends even once it has
+// been laid: if a pull-back or a rearrange brings it back to the hand, it is
+// owed again (rules: it must be laid this turn and can't be discarded).
+export interface OwedCard {
+  cardId: string;
+  row: boolean; // the cascade take's card (vs. a swapped-out joker)
+}
+
 export interface LastDraw {
   source: "row";
   takenCards: Card[];
   priorObligations: string[];
   priorRowObligationCardId: string | null;
+  priorOwedThisTurn: OwedCard[];
   // Part the turn was in when this take happened (a take after laying is
   // made in Part 2), so undoing it puts the player back where they were.
   partBefore: 1 | 2;
@@ -82,6 +92,7 @@ export interface ComeOutAttempt {
   meldIds: string[]; // melds laid this turn before coming out
   pendingObligations: string[]; // state from just before the first one
   rowObligationCardId: string | null;
+  owedThisTurn: OwedCard[];
   lastDraw: LastDraw | null;
   // Cascade takes made after the first of those melds (DESIGN.md decision
   // 24); taking the melds back returns these cards to the cascade too.
@@ -124,6 +135,7 @@ export interface Round {
   turn0: Turn0State;
   pendingObligations: string[];
   rowObligationCardId: string | null;
+  owedThisTurn: OwedCard[]; // see OwedCard; pendingObligations = these, while in hand
   lastDraw: LastDraw | null;
   rearrange: RearrangeSession | null;
   rowDrawsThisPart1: number;

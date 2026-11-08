@@ -98,6 +98,7 @@ function makeStrandedObligationState(rng, current) {
       part: 2,
       current,
       pendingObligations: [obligatedCard.id],
+      owedThisTurn: [{ cardId: obligatedCard.id, row: false }],
       rowObligationCardId: null, // meld-only obligation -- not discard-eligible, forces a real meld
       rearrange: null,
       lastDraw: null,
