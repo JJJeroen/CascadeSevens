@@ -9,6 +9,7 @@ let failed = false;
 const fail = (m) => {
   console.log(`FAIL: ${m}`);
   failed = true;
+  process.exitCode = 1; // also when a check returns early from inside try
 };
 
 async function main() {
