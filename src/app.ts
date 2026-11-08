@@ -636,8 +636,14 @@ function renderOpenRow(): void {
   // Keep the newest discard in view when the row grows past the screen.
   const grew = r.openRow.length > lastOpenRowLen;
   lastOpenRowLen = r.openRow.length;
+  // The cascade steps down like a waterfall: each discard a little lower
+  // than the one before, the drop capped so a long row stays compact.
+  const n = r.openRow.length;
+  const step = n > 1 ? Math.min(8, 32 / (n - 1)) : 0;
+  el.style.setProperty("--step", `${step}px`);
+  el.style.setProperty("--drop", `${step * Math.max(0, n - 1)}px`);
   r.openRow.forEach((card, idx) => {
-    el.appendChild(
+    const cardEl = el.appendChild(
       buildCardEl(card, {
         pickable: pickable || (turn0Mine && idx === r.openRow.length - 1),
         onClick: turn0Mine
@@ -686,6 +692,7 @@ function renderOpenRow(): void {
             : null,
       }),
     );
+    cardEl.style.setProperty("--i", String(idx));
   });
   if (grew) el.scrollLeft = el.scrollWidth;
 }
