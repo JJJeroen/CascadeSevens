@@ -61,7 +61,10 @@ function pick(rng, arr) {
 // this doesn't change which mechanism resolves it, just exercises both
 // ends across trials.
 function makeStrandedObligationState(rng, current) {
-  const runLen = 3;
+  // 4 cards, so the 3 left after freeing the end card can be laid again as a
+  // run -- pulled-back cards are owed too (DESIGN decision 29). A spare card
+  // keeps the hand from being emptied by that re-lay.
+  const runLen = 4;
   const suit = pick(rng, SUITS);
   const startIdx = Math.floor(rng() * (RANKS.length - runLen));
   const runRanks = RANKS.slice(startIdx, startIdx + runLen);
@@ -84,7 +87,10 @@ function makeStrandedObligationState(rng, current) {
   ];
   const obligatedCard = card(targetRank, suitA);
   const fillerCard = card(targetRank, suitB);
-  const hand = [obligatedCard, fillerCard];
+  const spareRank = RANKS.find(
+    (r) => !runRanks.includes(r) && r !== targetRank,
+  );
+  const hand = [obligatedCard, fillerCard, card(spareRank, otherSuits[2])];
 
   const game = {
     scores: [0, 0],

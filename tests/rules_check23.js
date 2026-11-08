@@ -28,32 +28,37 @@ function check(name, fn) {
 // can't legally extend the heart run (wrong suit) or be laid as a new meld
 // on its own. Only dissolving the whole run frees the 7H that completes
 // 7S-7C-7H as a valid set.
-function freshStrandedGame() {
+// A 4-card run with the needed 7 at its end, plus a spare card: after the
+// dissolve, 7S 7C 7H go down as a set and the pulled-back 4-5-6H (owed again,
+// DESIGN decision 29) go down as a run, leaving the spare to discard.
+// `short: true` is the old 3-card shape (5-6-7H, no spare): there the
+// leftovers 5H 6H could never be laid again, so the AI must not dissolve.
+function freshStrandedGame({ short = false } = {}) {
   const game = E.newGame("standard", () => 0.1);
   E.startRound(game, () => 0.5);
   game.round.part = 2;
   game.round.current = 1;
+  const runRanks = short ? ["5", "6", "7"] : ["4", "5", "6", "7"];
   game.round.tableau = [
     {
       id: "meldA",
       type: "run",
-      slots: [
-        { card: card("5", "H"), ownerId: 1, wildAs: null },
-        { card: card("6", "H"), ownerId: 1, wildAs: null },
-        { card: card("7", "H"), ownerId: 1, wildAs: null },
-      ],
+      slots: runRanks.map((rank) => ({
+        card: card(rank, "H"),
+        ownerId: 1,
+        wildAs: null,
+      })),
     },
   ];
-  game.round.hands[1] = [card("7", "S"), card("7", "C")];
+  game.round.hands[1] = short
+    ? [card("7", "S"), card("7", "C")]
+    : [card("7", "S"), card("7", "C"), card("2", "D")];
   // Deliberately a meld-only obligation (rowObligationCardId left null, as
   // if this were a reclaimed joker from a swap, not an open-row take) --
-  // that kind can ONLY be resolved by melding it, never discarded back
-  // (§3 decision 17 is row-takes specifically). This is what actually
-  // forces the rearrangement path in this test: a row obligation would
-  // otherwise just get legally discarded back by the AI's existing
-  // fallback, which would resolve pendingObligations without ever
-  // exercising rearrangement at all.
+  // that kind can ONLY be resolved by melding it, never discarded back.
+  // This is what forces the rearrangement path in this test.
   game.round.pendingObligations = ["7S"];
+  game.round.owedThisTurn = [{ cardId: "7S", row: false }];
   game.round.rowObligationCardId = null;
   return game;
 }
@@ -82,6 +87,22 @@ check(
       throw new Error(
         `expected the three 7s (7S,7C,7H) to end up melded together as a set, found ${sevens.length} sevens in any tableau meld`,
       );
+  },
+);
+
+check(
+  "AI does not dissolve a series when the pulled-back leftovers could not be laid again",
+  () => {
+    const game = freshStrandedGame({ short: true });
+    game.round.comeOut[1] = true;
+    CascadeAI.takeTurn(game, { onStateChanged: () => {} });
+    if (!game.round.tableau.some((m) => m.id === "meldA"))
+      throw new Error(
+        "the AI dissolved 5-6-7H although 5H 6H would be owed with nowhere to go",
+      );
+    const hand = game.round.hands[1].map((c) => c.id);
+    if (hand.includes("5H") || hand.includes("6H"))
+      throw new Error(`pulled cards left in hand: ${hand}`);
   },
 );
 

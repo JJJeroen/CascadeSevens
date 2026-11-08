@@ -126,7 +126,7 @@ Zolang je **niet bent uitgekomen**, mag je alleen **nieuwe series uit je hand le
 
 - **Een nieuwe serie leggen** uit je hand.
 - **Kaart(en) toevoegen aan een bestaande serie** op tafel, van jezelf of van de tegenstander. Bij een reeks mag een toevoeging een joker die erin ligt verschuiven om ruimte te maken.
-- **Eigen kaarten terugtrekken** uit een serie en elders neerleggen. Alleen kaarten die jij zelf legde. Elke serie die overblijft moet weer geldig zijn (3+ kaarten) of helemaal leeg; een reeks mag je niet in het midden splitsen.
+- **Eigen kaarten terugtrekken** uit een serie en elders neerleggen. Alleen kaarten die jij zelf legde. Elke serie die overblijft moet weer geldig zijn (3+ kaarten) of helemaal leeg; een reeks mag je niet in het midden splitsen. Wat je terugtrekt moet je **deze beurt weer op tafel leggen**: je mag het niet in je hand houden of afgooien (dat geldt ook voor kaarten die je bij herschikken naar je hand haalt).
 - **Volledig herschikken**: alle kaarten op tafel (van beide spelers) plus je eigen hand vrij hergroeperen, ook tijdelijk ongeldig. Pas bij "commit" wordt alles gecontroleerd; klopt er iets niet, dan zie je wat en kun je doorgaan of annuleren. Kaarten die al op tafel lagen houden hun oorspronkelijke eigenaar.
 - **Een joker inwisselen** voor de echte kaart die hij vervangt. De vrijgekomen joker moet je diezelfde beurt weer in een serie leggen. Onbeperkt vaak herhaalbaar. De kaart waarmee je wisselt blijft tellen voor de eigenaar van de joker-plek; de joker die je pakt telt voor jou zodra je hem speelt.
 
