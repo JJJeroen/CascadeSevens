@@ -197,17 +197,20 @@ input {
 }
 
 /* --- Opponent: card backs peeking in from the top edge ----------------- */
+/* Peeks in from the very top edge, above the header (Night Cascade). */
 .opp-hand {
   display: flex;
-  height: 30px;
+  justify-content: center;
+  height: 22px;
   overflow: hidden;
   padding-left: 22px; /* cancels the first card's negative margin */
-  margin-top: -6px;
+  margin-top: calc(-1 * max(env(safe-area-inset-top), 4px));
+  margin-bottom: -4px;
 }
 .opp-hand .card.back {
   width: 40px;
   height: 58px;
-  margin-top: -28px;
+  margin-top: -36px;
   margin-left: -22px;
 }
 
@@ -553,6 +556,18 @@ h2 {
   transform: translateY(-6px);
   z-index: 1;
   position: relative;
+}
+/* The cascade itself (not the rearrange hand pool, which reuses .open-row)
+   steps down like a waterfall; app.ts sets --i per card and --step/--drop
+   on the row (the drop is capped, so a long row stays compact). */
+#openRow {
+  padding-bottom: calc(0.25rem + var(--drop, 0px));
+}
+#openRow .card {
+  transform: translateY(calc(var(--i, 0) * var(--step, 0px)));
+}
+#openRow .card.pickable:hover {
+  transform: translateY(calc(var(--i, 0) * var(--step, 0px) - 6px));
 }
 
 .obligation {

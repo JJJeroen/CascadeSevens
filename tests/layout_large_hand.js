@@ -810,6 +810,34 @@ async function testJokerObligation(page, vp) {
     fail(`${tag}: unexpected status text ${JSON.stringify(s.label)}`);
 }
 
+// The cascade steps down like a waterfall (Night Cascade): every discard sits
+// a little lower than the one before, and the row is tall enough that the
+// lowest card isn't clipped.
+async function testCascadeWaterfall(page, vp) {
+  const tag = `${vp.name} cascade-waterfall`;
+  const q = (js) => page.evalJs(js);
+  const s = await q(`(() => {
+    const r = window.__cascadeTest.getGame().round;
+    const c = (id) => ({ id, rank: id.slice(0, -1), suit: id.slice(-1) });
+    r.openRow = ["4C", "KH", "9S", "JD", "3D", "QS"].map(c);
+    window.__cascadeTest.render();
+    const row = document.querySelector("#openRow");
+    const tops = [...row.querySelectorAll(".card")].map((el) => el.getBoundingClientRect().top);
+    const last = row.lastElementChild.getBoundingClientRect();
+    const box = row.getBoundingClientRect();
+    return { tops, lastBottom: last.bottom, rowBottom: box.bottom };
+  })()`);
+  for (let i = 1; i < s.tops.length; i++)
+    if (!(s.tops[i] > s.tops[i - 1]))
+      return fail(
+        `${tag}: card ${i} should sit lower than card ${i - 1} (${s.tops})`,
+      );
+  if (s.lastBottom > s.rowBottom + 1)
+    fail(
+      `${tag}: the lowest card is clipped (${s.lastBottom} > ${s.rowBottom})`,
+    );
+}
+
 // Both totals sit as chips in the top-right corner (Night Cascade look,
 // 2026-11-08): yours at the edge, the AI's just left of it -- with or without
 // the opponent's "out" badge showing.
@@ -859,6 +887,7 @@ async function main() {
       await testTableau(page, vp);
       await testOwnerColors(page, vp);
       await testCornerScores(page, vp);
+      await testCascadeWaterfall(page, vp);
       await testDialog(page, vp);
       await testChrome(page, vp);
       await testDoneDrawing(page, vp);
