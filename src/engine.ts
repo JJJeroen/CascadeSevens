@@ -135,6 +135,7 @@ function startRound(game: Game, rng: () => number = Math.random): Game {
     // Which entry in pendingObligations (if any) is the current cascade
     // take's bottom card. Only the newest take's bottom card is owed.
     rowObligationCardId: null,
+    owedThisTurn: [], // every card owed this turn, laid or not (see syncObligations)
     lastDraw: null, // undoable until any other Part 2 action happens
     rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
     turnStart: null,
@@ -331,6 +332,7 @@ function drawFromOpenRow(game: Game, cardId: string): void {
   const bottomCard = taken[0];
   const priorObligations = r.pendingObligations.slice();
   const priorRowObligationCardId = r.rowObligationCardId;
+  const priorOwedThisTurn = r.owedThisTurn.slice();
   // Supersedes any earlier take's obligation, but a joker-swap obligation
   // (meld-only, possible once a take happens after laying) must survive.
   r.pendingObligations = [
@@ -338,6 +340,11 @@ function drawFromOpenRow(game: Game, cardId: string): void {
     bottomCard.id,
   ];
   r.rowObligationCardId = bottomCard.id;
+  r.owedThisTurn = [
+    ...r.owedThisTurn.filter((o) => !o.row),
+    { cardId: bottomCard.id, row: true },
+  ];
+  syncObligations(r); // a swapped-out joker still in hand stays owed
   r.rowDrawsThisPart1 += 1;
   const partBefore = r.part as 1 | 2;
   r.part = 2; // a take no longer needs a separate "Done drawing" step
@@ -350,6 +357,7 @@ function drawFromOpenRow(game: Game, cardId: string): void {
     takenCards: taken.slice(),
     priorObligations,
     priorRowObligationCardId,
+    priorOwedThisTurn,
     partBefore,
     previous: r.lastDraw,
   };
@@ -382,6 +390,7 @@ function restartTurn(game: Game): void {
   r.comeOutAttempt = null;
   r.pendingObligations = [];
   r.rowObligationCardId = null;
+  r.owedThisTurn = [];
   r.lastDraw = null;
   r.rowDrawsThisPart1 = 0;
   r.turnStart = null;
@@ -434,6 +443,7 @@ function returnTakeToRow(r: Round, draw: LastDraw): void {
   r.openRow.push(...draw.takenCards);
   r.pendingObligations = draw.priorObligations;
   r.rowObligationCardId = draw.priorRowObligationCardId;
+  r.owedThisTurn = draw.priorOwedThisTurn;
   r.rowDrawsThisPart1 -= 1;
 }
 
@@ -721,6 +731,7 @@ function layNewMeld(game: Game, cardSelections: SlotSpec[]): Meld {
       meldIds: [],
       pendingObligations: [...r.pendingObligations],
       rowObligationCardId: r.rowObligationCardId,
+      owedThisTurn: [...r.owedThisTurn],
       lastDraw: r.lastDraw,
       laterTakes: [],
     };
@@ -782,6 +793,27 @@ function clearObligations(r: Round, cardIds: string[]): void {
   );
   if (r.rowObligationCardId && cardIds.includes(r.rowObligationCardId)) {
     r.rowObligationCardId = null;
+  }
+}
+
+// Laying an owed card resolves it, but only while it stays on the table: the
+// rules say it must be laid this turn and can't be discarded. A pull-back or
+// a rearrange can bring it back to the hand, so after those actions every card
+// in owedThisTurn that is in the hand is owed again (the cascade card regains
+// its row-obligation role, so "Undo"/"Start turn over" texts stay right).
+function syncObligations(r: Round): void {
+  const hand = r.hands[r.current];
+  for (const owed of r.owedThisTurn) {
+    if (findCard(hand, owed.cardId) === -1) continue;
+    if (!r.pendingObligations.includes(owed.cardId))
+      r.pendingObligations.push(owed.cardId);
+    // A card that is also owed as a swapped-out joker stays a meld-only
+    // obligation (it must not become the row card, or a newer cascade take
+    // would drop it from pendingObligations).
+    const alsoSwapped = r.owedThisTurn.some(
+      (o) => o.cardId === owed.cardId && !o.row,
+    );
+    if (owed.row && !alsoSwapped) r.rowObligationCardId = owed.cardId;
   }
 }
 
@@ -1052,6 +1084,8 @@ function swapJoker(
   };
   hand.push(slot.card); // joker returns to hand
   r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
+  if (!r.owedThisTurn.some((o) => o.cardId === slot.card.id && !o.row))
+    r.owedThisTurn.push({ cardId: slot.card.id, row: false });
   clearObligations(r, [replacement.id]);
   r.lastDraw = null;
   logMsg(
@@ -1133,6 +1167,7 @@ function pullFromMeld(
     r.tableau = r.tableau.filter((m) => m.id !== meldId);
   }
   for (const slot of pulled) r.hands[r.current].push(slot.card);
+  syncObligations(r);
   r.lastDraw = null;
   logMsg(
     game,
@@ -1407,9 +1442,9 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   // §3 decision 16): a card still owed after the commit (the row-take card
   // left in hand; a session can't start with any other obligation open) must
   // stay layable, so the hand has to keep at least one more card than it owes.
-  const owedAfter = r.pendingObligations.filter((id) =>
-    newHandIds.includes(id),
-  ).length;
+  const owedAfter = new Set(
+    r.owedThisTurn.map((o) => o.cardId).filter((id) => newHandIds.includes(id)),
+  ).size;
   if (problems.length === 0 && newHandIds.length === 0) {
     problems.push({
       error:
@@ -1455,6 +1490,9 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   if (r.rowObligationCardId && !newHandIds.includes(r.rowObligationCardId)) {
     clearObligations(r, [r.rowObligationCardId]);
   }
+  // ...and an owed card laid earlier this turn that the session moved back
+  // to the hand is owed again.
+  syncObligations(r);
   r.rearrange = null;
   r.lastDraw = null;
   logMsg(game, `Player ${r.current + 1} rearranged the table.`);
@@ -1512,6 +1550,7 @@ function takeBackUnqualifiedMelds(game: Game): void {
   r.comeOutAccum[r.current] = 0;
   r.pendingObligations = [...attempt.pendingObligations];
   r.rowObligationCardId = attempt.rowObligationCardId;
+  r.owedThisTurn = [...attempt.owedThisTurn];
   r.lastDraw = attempt.lastDraw;
   r.comeOutAttempt = null;
   logMsg(
@@ -1569,6 +1608,7 @@ function advanceTurn(game: Game): void {
   r.lastDraw = null;
   r.rowDrawsThisPart1 = 0;
   r.comeOutAttempt = null;
+  r.owedThisTurn = [];
   r.turnStart = null;
   r.undoStack = [];
 }
