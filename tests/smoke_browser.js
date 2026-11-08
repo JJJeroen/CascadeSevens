@@ -27,6 +27,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { freshProfileArgs } from "./browser_harness.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DOCS_DIR = path.join(__dirname, "..", "docs");
@@ -135,6 +136,7 @@ async function connectCdp(browserBin) {
       "--no-sandbox",
       `--remote-debugging-port=${CDP_PORT}`,
       "--window-size=900,1400",
+      ...freshProfileArgs(),
     ],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
@@ -287,8 +289,17 @@ async function isDisabled(page, selector) {
 async function resolveTurn0IfPresent(page, timeoutMs = 8000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    if (!(await isDisabled(page, "#drawPileBtn"))) return true;
-    await clickSelector(page, "#pileBtn"); // Turn 0: tap the pile to decline
+    // Check and click in ONE evaluation: with two separate CDP calls the
+    // AI's ~500 ms Turn 0 reply could land in between, and the "decline"
+    // click then drew from the pile instead (drawPileBtn stayed disabled
+    // and the test timed out).
+    const ready = await page.evalJs(`(() => {
+      const d = document.querySelector("#drawPileBtn");
+      if (d && !d.disabled) return true;
+      document.querySelector("#pileBtn").click(); // Turn 0: tap the pile to decline
+      return false;
+    })()`);
+    if (ready) return true;
     await new Promise((r) => setTimeout(r, 250));
   }
   return false;
