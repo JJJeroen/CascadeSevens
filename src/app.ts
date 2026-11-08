@@ -34,6 +34,9 @@ let currentRng: (() => number) | null = null; // shared across every round of on
 // what makes a natural sideways slide work for hand reordering.
 const HOLD_MS = 180;
 const LIFT_PX = 6; // real vertical component that arms a drag before the hold fires
+// An armed drag released this close to where it started was a slow tap (no
+// drop target is ever this close), so it runs the tap action instead.
+const TAP_SLOP_PX = 10;
 const AUTOSCROLL_MARGIN = 64; // px from a viewport edge that triggers autoscroll during an armed drag
 const AUTOSCROLL_MAX_SPEED = 14; // px per animation frame right at the edge
 
@@ -1426,11 +1429,24 @@ document.addEventListener("pointerup", (ev: PointerEvent) => {
     return; // plain tap -- let the browser's own synthetic click fire as normal
   }
   ds.originEl.releasePointerCapture(ev.pointerId);
+  cleanupDrag(ds);
+  // A slow tap: the hold timer armed a drag, but the finger (or mouse) never
+  // really moved. That is a tap, not a drop -- run the card's normal tap
+  // action ourselves (a long touch may not produce a native click at all),
+  // then swallow the native click if one follows.
+  const moved = Math.hypot(ev.clientX - ds.startX, ev.clientY - ds.startY);
+  if (moved <= TAP_SLOP_PX) {
+    if (ds.originEl.isConnected) ds.originEl.click();
+    suppressNextClick = true;
+    setTimeout(() => {
+      suppressNextClick = false;
+    }, 0);
+    return;
+  }
   suppressNextClick = true;
   setTimeout(() => {
     suppressNextClick = false;
   }, 0);
-  cleanupDrag(ds);
   resolveDrop(ds);
 });
 

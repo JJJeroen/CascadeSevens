@@ -1403,10 +1403,26 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   }
 
   const newHandIds = rr.handPool.slice();
+  // The same guard every other meld action runs (assertLeavesHandUsable,
+  // §3 decision 16): a card still owed after the commit (the row-take card
+  // left in hand; a session can't start with any other obligation open) must
+  // stay layable, so the hand has to keep at least one more card than it owes.
+  const owedAfter = r.pendingObligations.filter((id) =>
+    newHandIds.includes(id),
+  ).length;
   if (problems.length === 0 && newHandIds.length === 0) {
     problems.push({
       error:
         "You must keep at least one card in hand — you cannot place your entire hand onto the table.",
+    });
+  } else if (
+    problems.length === 0 &&
+    owedAfter > 0 &&
+    newHandIds.length <= owedAfter
+  ) {
+    problems.push({
+      error:
+        "That would leave you holding only the card you owe, with no way to lay it. Keep another card in your hand, or put the owed card in a series.",
     });
   }
 

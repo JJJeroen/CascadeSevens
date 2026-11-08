@@ -690,6 +690,14 @@ async function testBlockedPullHint(page, vp) {
       `(() => { const r = document.querySelector('#tableau .card[data-card-id="QD"]').getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`,
     );
 
+  // Hold until the hint shows (up to 2 s) instead of a fixed 400 ms: on a
+  // busy CI runner the 180 ms hold timer can still be queued when a fixed
+  // sleep ends, and the release then counts as a tap.
+  const holdUntilBalloon = async (re) => {
+    for (let i = 0; i < 40 && !re.test((await balloon()) || ""); i++)
+      await sleep(50);
+  };
+
   await setup(true);
   // mouse drag, no hold
   let p = await cardPoint();
@@ -708,7 +716,7 @@ async function testBlockedPullHint(page, vp) {
   p = await cardPoint();
   await send("mouseMoved", p.x, p.y);
   await send("mousePressed", p.x, p.y);
-  await sleep(400);
+  await holdUntilBalloon(/counts for the AI/);
   await send("mouseReleased", p.x, p.y);
   b = await balloon();
   if (!b || !/counts for the AI/.test(b))
@@ -721,7 +729,7 @@ async function testBlockedPullHint(page, vp) {
   p = await cardPoint();
   await send("mouseMoved", p.x, p.y);
   await send("mousePressed", p.x, p.y);
-  await sleep(400);
+  await holdUntilBalloon(/after you've come out/);
   await send("mouseReleased", p.x, p.y);
   b = await balloon();
   if (!b || !/after you've come out/.test(b))
