@@ -841,6 +841,7 @@ function attachBlockedPullHint(el, message) {
     });
 }
 function attachDragSource(el, source) {
+    el.classList.add("drag-source"); // touch-action: none (style.css)
     el.addEventListener("pointerdown", (ev) => {
         if (!ev.isPrimary || dragState !== null)
             return;

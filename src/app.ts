@@ -983,6 +983,7 @@ function attachBlockedPullHint(el: HTMLElement, message: string): void {
 }
 
 function attachDragSource(el: HTMLElement, source: DragSource): void {
+  el.classList.add("drag-source"); // touch-action: none (style.css)
   el.addEventListener("pointerdown", (ev: PointerEvent) => {
     if (!ev.isPrimary || dragState !== null) return;
     const g = game as Game;
