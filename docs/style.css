@@ -504,7 +504,17 @@ h2 {
   min-height: 90px;
   padding: 0.5rem 0 1rem;
   overflow-x: auto;
-  touch-action: pan-x;
+  /* #hand wraps instead of scrolling sideways, so let a vertical swipe on
+     the gaps scroll the page. */
+  touch-action: pan-y;
+}
+/* A card you can pick up and drag (app.ts attachDragSource): the browser
+   must not claim the touch for scrolling, or it cancels the drag
+   (pointercancel) as soon as the finger moves -- sideways reorder, pulling
+   your own card back from the table and rearrange drags all broke that way.
+   Scroll by swiping outside these cards. */
+.drag-source {
+  touch-action: none;
 }
 .hand .card {
   cursor: pointer;
@@ -630,6 +640,10 @@ h2 {
   padding: 1.25rem 1.5rem 1.1rem;
   max-width: 480px;
   width: 90%;
+  /* Never taller than the screen: long popups (Help on a phone) scroll. */
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -776,6 +790,12 @@ h2 {
 }
 .modal-box button {
   cursor: pointer;
+}
+/* A popup that scrolls (app.ts syncDialogScroll) doesn't move: let a finger
+   scroll it instead. */
+.modal-box.scrolls {
+  cursor: auto;
+  touch-action: pan-y;
 }
 .modal-box::before {
   content: "";
