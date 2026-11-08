@@ -71,9 +71,14 @@ const POLICIES: Record<AILevel, Policy> = {
   },
 };
 
-// Test hook: switch the search off to test the heuristic levels quickly. The
-// app never changes it.
-export const aiSettings = { search: true };
+// Test hooks (the app never changes them):
+// - search: false switches the search off to test the heuristic levels quickly.
+// - searchMs: wall-clock cap for one Hard discard search. The search runs on
+//   the UI thread, and the turn budget alone let a slow phone freeze for a
+//   second or more; on normal hardware the turn budget ends the search first,
+//   so results stay the same (set Infinity where exact reproducibility
+//   matters).
+export const aiSettings = { search: true, searchMs: 400 };
 
 // Hard's discard cost = keepScore + DANGER_WEIGHT * table danger
 //                                 + OPP_NEED_WEIGHT * opponent need.
@@ -777,13 +782,19 @@ function searchDiscard(
   const cands = ranked.slice(0, search.candidates);
   const total = cands.map(() => 0);
   const quiet = { onStateChanged: () => {} };
+  const deadline = performance.now() + aiSettings.searchMs;
   let simulated = 0;
-  for (let k = 0; k < search.samples; k++) {
+  let completed = 0; // samples every candidate was played out on
+  samples: for (let k = 0; k < search.samples; k++) {
     if (k > 0 && simulated >= search.turnBudget) break;
     const pool = CascadeEngine.shuffle(unseen.slice(), rng);
     const oppCards = [...known, ...pool.slice(0, unknownCount)];
     const rest = pool.slice(unknownCount);
+    const margins: number[] = [];
     for (let i = 0; i < cands.length; i++) {
+      // Out of time: drop this unfinished sample (comparing candidates on
+      // different samples would be unfair) and decide on the finished ones.
+      if (performance.now() > deadline) break samples;
       const sim = structuredClone(game) as Game;
       const simRound = sim.round as Round;
       sim.undoFor = undefined; // playouts must not pay for undo snapshots
@@ -796,9 +807,12 @@ function searchDiscard(
         takeTurn(sim, quiet, "intermediate");
       simulated += turns;
       const rs = simRound.roundScores;
-      if (rs) total[i] += rs[me] - rs[opp];
+      margins.push(rs ? rs[me] - rs[opp] : 0);
     }
+    for (let i = 0; i < cands.length; i++) total[i] += margins[i];
+    completed++;
   }
+  if (completed === 0) return cands[0].id; // no time for even one sample: heuristic pick
   let best = 0;
   for (let i = 1; i < cands.length; i++) if (total[i] > total[best]) best = i;
   return cands[best].id;
