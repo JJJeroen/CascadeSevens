@@ -68,11 +68,20 @@ function resetDialogPosition(box) {
     dialogOffsets.set(box, { x: 0, y: 0 });
     box.style.transform = "";
 }
+// A popup taller than the screen (Help on a small phone, a long list of
+// rearrange problems) is capped at the screen height and scrolls instead of
+// moving: it already fills the screen, and on touch dragging it would fight
+// the scroll (CSS .modal-box.scrolls allows vertical panning).
+function syncDialogScroll(box) {
+    box.classList.toggle("scrolls", box.scrollHeight > box.clientHeight + 1);
+}
 function makeDraggable(box) {
     resetDialogPosition(box);
     let drag = null;
     box.addEventListener("pointerdown", (ev) => {
-        if (!ev.isPrimary || ev.target.closest("button"))
+        if (!ev.isPrimary ||
+            box.classList.contains("scrolls") ||
+            ev.target.closest("button"))
             return;
         const off = dialogOffsets.get(box);
         const r = box.getBoundingClientRect();
@@ -143,7 +152,9 @@ function showDialog(title, body, actions = [{ label: "OK" }]) {
     fillDialog($("dialogBox"), title, body, actions, closeDialog);
     resetDialogPosition($("dialogBox"));
     $("dialogRoot").hidden = false;
-    $("dialogBox").querySelector("button")?.focus();
+    $("dialogBox").scrollTop = 0;
+    syncDialogScroll($("dialogBox"));
+    $("dialogBox").querySelector("button")?.focus({ preventScroll: true });
 }
 function showError(msg) {
     showDialog("Can't do that", msg);
@@ -397,6 +408,7 @@ function renderBanner() {
         fillDialog(modalBox, `${who} won the game!`, `Final: you ${g.scores[0]} — them ${g.scores[1]}`, [{ label: "New game", onClick: newGame }], () => {
             modalRoot.hidden = true;
         });
+        syncDialogScroll(modalBox);
         banner.hidden = true;
         return;
     }
@@ -411,6 +423,7 @@ function renderBanner() {
         ], () => {
             modalRoot.hidden = true;
         });
+        syncDialogScroll(modalBox);
         banner.hidden = true;
         return;
     }
@@ -844,6 +857,7 @@ function attachBlockedPullHint(el, message) {
     });
 }
 function attachDragSource(el, source) {
+    el.classList.add("drag-source"); // touch-action: none (style.css)
     el.addEventListener("pointerdown", (ev) => {
         if (!ev.isPrimary || dragState !== null)
             return;
@@ -1808,7 +1822,13 @@ function updateBalloon(g, r, isHumanTurn, rearranging, hand) {
 }
 // --- Menu ----------------------------------------------------------------------
 const DEBUG_KEY = "cascade.debug";
+// The Debug panel shows the AI's hand face-up, the seed and the log: fine on
+// the website for testing, but not in the store app. Capacitor's native
+// bridge injects window.Capacitor into the app's WebView.
+const IN_NATIVE_APP = !!window.Capacitor?.isNativePlatform?.();
 function debugOn() {
+    if (IN_NATIVE_APP)
+        return false;
     try {
         return localStorage.getItem(DEBUG_KEY) === "1";
     }
@@ -2011,6 +2031,11 @@ else if (splash) {
 }
 void showVersion();
 makeDraggable($("modalBox"));
+window.addEventListener("resize", () => {
+    syncDialogScroll($("dialogBox"));
+    syncDialogScroll($("modalBox"));
+});
 makeDraggable($("dialogBox"));
 $("debugPanel").hidden = !debugOn();
+$("menuDebugBtn").hidden = IN_NATIVE_APP;
 newGame();
