@@ -2030,7 +2030,16 @@ function updateBalloon(
 
 // --- Menu ----------------------------------------------------------------------
 const DEBUG_KEY = "cascade.debug";
+// The Debug panel shows the AI's hand face-up, the seed and the log: fine on
+// the website for testing, but not in the store app. Capacitor's native
+// bridge injects window.Capacitor into the app's WebView.
+const IN_NATIVE_APP = !!(
+  window as unknown as {
+    Capacitor?: { isNativePlatform?: () => boolean };
+  }
+).Capacitor?.isNativePlatform?.();
 function debugOn(): boolean {
+  if (IN_NATIVE_APP) return false;
   try {
     return localStorage.getItem(DEBUG_KEY) === "1";
   } catch {
@@ -2267,4 +2276,5 @@ window.addEventListener("resize", () => {
 });
 makeDraggable($("dialogBox"));
 $("debugPanel").hidden = !debugOn();
+$("menuDebugBtn").hidden = IN_NATIVE_APP;
 newGame();
