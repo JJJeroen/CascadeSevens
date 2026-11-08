@@ -117,6 +117,14 @@ function resetDialogPosition(box: HTMLElement): void {
   box.style.transform = "";
 }
 
+// A popup taller than the screen (Help on a small phone, a long list of
+// rearrange problems) is capped at the screen height and scrolls instead of
+// moving: it already fills the screen, and on touch dragging it would fight
+// the scroll (CSS .modal-box.scrolls allows vertical panning).
+function syncDialogScroll(box: HTMLElement): void {
+  box.classList.toggle("scrolls", box.scrollHeight > box.clientHeight + 1);
+}
+
 function makeDraggable(box: HTMLElement): void {
   resetDialogPosition(box);
   let drag: {
@@ -130,7 +138,12 @@ function makeDraggable(box: HTMLElement): void {
     maxY: number;
   } | null = null;
   box.addEventListener("pointerdown", (ev: PointerEvent) => {
-    if (!ev.isPrimary || (ev.target as Element).closest("button")) return;
+    if (
+      !ev.isPrimary ||
+      box.classList.contains("scrolls") ||
+      (ev.target as Element).closest("button")
+    )
+      return;
     const off = dialogOffsets.get(box) as { x: number; y: number };
     const r = box.getBoundingClientRect();
     // Where the box sits with no offset, so the move can be kept on screen.
@@ -222,7 +235,9 @@ function showDialog(
   fillDialog($("dialogBox"), title, body, actions, closeDialog);
   resetDialogPosition($("dialogBox"));
   $("dialogRoot").hidden = false;
-  $("dialogBox").querySelector("button")?.focus();
+  $("dialogBox").scrollTop = 0;
+  syncDialogScroll($("dialogBox"));
+  $("dialogBox").querySelector("button")?.focus({ preventScroll: true });
 }
 
 function showError(msg: string): void {
@@ -503,6 +518,7 @@ function renderBanner(): void {
         modalRoot.hidden = true;
       },
     );
+    syncDialogScroll(modalBox);
     banner.hidden = true;
     return;
   }
@@ -524,6 +540,7 @@ function renderBanner(): void {
         modalRoot.hidden = true;
       },
     );
+    syncDialogScroll(modalBox);
     banner.hidden = true;
     return;
   }
@@ -2227,6 +2244,10 @@ if (new URLSearchParams(location.search).has("test")) {
 void showVersion();
 
 makeDraggable($("modalBox"));
+window.addEventListener("resize", () => {
+  syncDialogScroll($("dialogBox"));
+  syncDialogScroll($("modalBox"));
+});
 makeDraggable($("dialogBox"));
 $("debugPanel").hidden = !debugOn();
 newGame();
