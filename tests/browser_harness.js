@@ -5,6 +5,8 @@
 // WebSocket).
 
 import { spawn, execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -30,6 +32,25 @@ export function findBrowser() {
     }
   }
   return null;
+}
+
+// A throwaway profile per launch: no first-run work, no shared profile lock
+// between the tests, and nothing left in the user's real Chrome profile. The
+// directory is removed when the test process exits.
+export function freshProfileArgs() {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "cascade-chrome-"));
+  process.on("exit", () => {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  });
+  return [
+    `--user-data-dir=${dir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+  ];
 }
 
 export function startStaticServer(port) {
@@ -74,12 +95,22 @@ export async function connect(browserBin, cdpPort) {
       "--disable-gpu",
       "--no-sandbox",
       `--remote-debugging-port=${cdpPort}`,
+      ...freshProfileArgs(),
     ],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
+  // Kept so a failed start can say why (sandbox, missing library, ...).
+  let stderr = "";
+  child.stderr.on("data", (d) => {
+    stderr = (stderr + d).slice(-2000);
+  });
   try {
     let target = null;
     for (let i = 0; i < 120 && !target; i++) {
+      if (child.exitCode !== null)
+        throw new Error(
+          `Chromium exited (code ${child.exitCode}) before its CDP endpoint came up:\n${stderr}`,
+        );
       try {
         target = await (
           await fetch(`http://127.0.0.1:${cdpPort}/json/new?about:blank`, {
@@ -90,7 +121,8 @@ export async function connect(browserBin, cdpPort) {
         await new Promise((r) => setTimeout(r, 250));
       }
     }
-    if (!target) throw new Error("Chromium's CDP endpoint never came up");
+    if (!target)
+      throw new Error(`Chromium's CDP endpoint never came up:\n${stderr}`);
     const ws = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
       ws.onopen = resolve;

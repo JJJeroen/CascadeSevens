@@ -9,6 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,4 +33,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Chrome's first start on a fresh runner (cold binary, font cache) is
+      # what made the first browser test miss its CDP deadline; pay it here.
+      - name: Warm up Chrome
+        run: google-chrome-stable --headless=new --disable-gpu --no-sandbox --dump-dom about:blank > /dev/null
       - run: npm run test:browser
