@@ -1209,12 +1209,19 @@ function addMultipleToMeld(
   g: Game,
   meldId: string,
   cardIds: string[],
-): { addedCount: number; remaining: string[] } {
+): { addedCount: number; remaining: string[]; error: string | null } {
   const remaining = new Set(cardIds);
+  // Fits the shape but an engine guard said no (not come out yet, would
+  // strand an owed card, ...): don't retry it, keep it selected and report
+  // the engine's reason instead of failing silently.
+  const refused = new Set<string>();
+  let error: string | null = null;
+  let addedCount = 0;
   let progress = true;
-  while (progress && remaining.size > 0) {
+  while (progress) {
     progress = false;
     for (const id of remaining) {
+      if (refused.has(id)) continue;
       const meld = g.round?.tableau.find((m) => m.id === meldId);
       const card = g.round?.hands[0].find((c) => c.id === id);
       if (!meld || !card) {
@@ -1226,16 +1233,15 @@ function addMultipleToMeld(
       try {
         CascadeEngine.addToMeld(g, meldId, id, resolved.wildAs);
         remaining.delete(id);
+        addedCount++;
         progress = true;
-      } catch {
-        remaining.delete(id); // fits the shape but an engine guard rejected it -- don't retry
+      } catch (e) {
+        refused.add(id);
+        error ??= (e as Error).message;
       }
     }
   }
-  return {
-    addedCount: cardIds.length - remaining.size,
-    remaining: [...remaining],
-  };
+  return { addedCount, remaining: [...remaining], error };
 }
 
 function resolveDrop(ds: DragState): void {
@@ -1338,7 +1344,8 @@ function resolveDrop(ds: DragState): void {
       const result = addMultipleToMeld(g, target.meldId, ids);
       if (result.addedCount === 0) {
         showError(
-          "No legal spot for any of the selected cards in this series.",
+          result.error ??
+            "No legal spot for any of the selected cards in this series.",
         );
         return;
       }
@@ -1347,6 +1354,7 @@ function resolveDrop(ds: DragState): void {
         if (!stillRemaining.has(id)) selectedHandCardIds.delete(id);
       }
       afterHumanAction();
+      if (result.error) showError(result.error);
       return;
     }
   }
@@ -1737,7 +1745,10 @@ $("addToMeldBtn").addEventListener("click", () => {
   const ids = [...selectedHandCardIds];
   const result = addMultipleToMeld(game as Game, targetedMeldId as string, ids);
   if (result.addedCount === 0) {
-    showError("No legal spot for any of the selected card(s) in this series.");
+    showError(
+      result.error ??
+        "No legal spot for any of the selected card(s) in this series.",
+    );
     return;
   }
   const stillRemaining = new Set(result.remaining);
@@ -1745,6 +1756,7 @@ $("addToMeldBtn").addEventListener("click", () => {
     if (!stillRemaining.has(id)) selectedHandCardIds.delete(id);
   }
   afterHumanAction();
+  if (result.error) showError(result.error);
 });
 
 $("swapJokerBtn").addEventListener("click", () => {
