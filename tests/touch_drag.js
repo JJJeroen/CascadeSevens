@@ -98,16 +98,19 @@ async function main() {
         `[...document.querySelectorAll("#hand .card")].map((e) => e.dataset.cardId)`,
       );
 
-    // 1. Hand reorder: hold KC (the last card), slide left onto 9S's strip.
+    // 1. Hand reorder: hold the last card, slide it left onto the first
+    // card's strip. (The app keeps your own hand order, so which card is last
+    // depends on the random opening deal -- use the order as displayed.)
     await setup();
     const before = await handOrder();
-    const kc = await centerOf('#hand .card[data-card-id="KC"]', 10);
-    const s9 = await centerOf('#hand .card[data-card-id="9S"]', 4);
-    await touchDrag(kc, { x: s9.x, y: kc.y });
+    const last = before[before.length - 1];
+    const from = await centerOf(`#hand .card[data-card-id="${last}"]`, 10);
+    const to = await centerOf(`#hand .card[data-card-id="${before[0]}"]`, 4);
+    await touchDrag(from, { x: to.x, y: from.y });
     const after = await handOrder();
-    if (after.indexOf("KC") >= before.indexOf("KC"))
+    if (after.indexOf(last) >= before.indexOf(last))
       fail(
-        `touch reorder: KC should move left (before ${before}, after ${after})`,
+        `touch reorder: ${last} should move left (before ${before}, after ${after})`,
       );
     if (await q(`window.__cancels`))
       fail("touch reorder: the browser cancelled the pointer");
