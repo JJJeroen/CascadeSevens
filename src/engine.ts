@@ -386,6 +386,9 @@ function restartTurn(game: Game): void {
   r.hands[r.current] = start.hand;
   r.openRow = start.openRow;
   r.tableau = start.tableau;
+  // The table is back as it was when the turn began (or just after the pile
+  // draw, which doesn't touch it): undo a swap's change to this list.
+  r.tableAtTurnStart = r.tableau.flatMap((m) => m.slots.map((s) => s.card.id));
   r.comeOut[r.current] = start.comeOut;
   r.comeOutAccum[r.current] = start.comeOutAccum;
   r.comeOutAttempt = null;
@@ -1093,6 +1096,9 @@ function swapJoker(
     wildAs: null,
   };
   hand.push(slot.card); // joker returns to hand
+  // It left the table, so when it is laid again it counts as laid this turn
+  // (decision 30). Undo snapshots restore the list; restartTurn recomputes it.
+  r.tableAtTurnStart = r.tableAtTurnStart.filter((id) => id !== slot.card.id);
   r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
   // (a "pulled" entry for the same joker doesn't count: it must still be
   // recorded as a swapped joker, which blocks starting a rearrange)

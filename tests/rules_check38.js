@@ -151,14 +151,84 @@ check(
   },
 );
 
+check(
+  "a joker swapped out and laid again this turn counts as laid this turn",
+  () => {
+    const g = rig({
+      hand0: ["7H", "9S", "9D", "9H", "2D", "QC"],
+      tableau: [
+        {
+          type: "run",
+          cards: [
+            ["4H", 1],
+            ["5H", 1],
+            ["6H", 1],
+          ],
+        },
+      ],
+    });
+    const r = g.round;
+    // The opponent's earlier run ends in a joker standing in for 7H.
+    r.tableau[0].slots.push({
+      card: { id: "JOKER-1", rank: "JOKER", suit: null },
+      ownerId: 1,
+      wildAs: { rank: "7" },
+    });
+    r.closedPile = r.closedPile.filter((c) => c.id !== "JOKER-1");
+    r.tableAtTurnStart.push("JOKER-1");
+    E.swapJoker(g, "t0", "JOKER-1", "7H");
+    const m = E.layNewMeld(g, [
+      { cardId: "9S" },
+      { cardId: "9D" },
+      { cardId: "9H" },
+      { cardId: "JOKER-1", wildAs: { rank: "9" } },
+    ]);
+    if (!E.isLaidThisTurn(g, "JOKER-1"))
+      throw new Error("the relaid joker was laid this turn");
+    E.pullFromMeld(g, m.id, ["JOKER-1"]); // allowed (and owed again)
+    if (!r.pendingObligations.includes("JOKER-1"))
+      throw new Error("joker owed");
+  },
+);
+
 check("undo and Start turn over keep the turn-start table", () => {
-  const g = rig({ hand0: ["9S", "9H", "9D", "2D"], tableau: [kings] });
+  const g = rig({
+    hand0: ["7H", "9S", "9H", "9D", "2D"],
+    tableau: [
+      kings,
+      {
+        type: "run",
+        cards: [
+          ["4H", 1],
+          ["5H", 1],
+          ["6H", 1],
+        ],
+      },
+    ],
+  });
   g.undoFor = 0;
-  const before = g.round.tableAtTurnStart.join();
+  const r = g.round;
+  r.tableau[1].slots.push({
+    card: { id: "JOKER-1", rank: "JOKER", suit: null },
+    ownerId: 1,
+    wildAs: { rank: "7" },
+  });
+  r.closedPile = r.closedPile.filter((c) => c.id !== "JOKER-1");
+  r.tableAtTurnStart.push("JOKER-1");
+  r.turnStart = null;
+  // a pile draw sets the Start-turn-over point
+  r.part = 1;
+  E.drawFromClosedPile(g);
+  const before = r.tableAtTurnStart.slice().sort().join();
   E.layNewMeld(g, sel("9S", "9H", "9D"));
   E.undo(g);
-  if (g.round.tableAtTurnStart.join() !== before)
+  if (r.tableAtTurnStart.slice().sort().join() !== before)
     throw new Error("changed by undo");
+  E.swapJoker(g, "t1", "JOKER-1", "7H"); // takes the joker off the list
+  if (!E.isLaidThisTurn(g, "JOKER-1")) throw new Error("swap should unlist it");
+  E.restartTurn(g);
+  if (r.tableAtTurnStart.slice().sort().join() !== before)
+    throw new Error("Start turn over should restore the turn-start table");
 });
 
 if (failures) {
