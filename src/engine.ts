@@ -813,9 +813,18 @@ function syncObligations(r: Round): void {
     // obligation (it must not become the row card, or a newer cascade take
     // would drop it from pendingObligations).
     const alsoSwapped = r.owedThisTurn.some(
-      (o) => o.cardId === owed.cardId && !o.row,
+      (o) => o.cardId === owed.cardId && !o.row && !o.pulled,
     );
     if (owed.row && !alsoSwapped) r.rowObligationCardId = owed.cardId;
+  }
+}
+
+// Cards pulled back from the table this turn must be laid again before the
+// turn ends (DESIGN decision 29): record them as owed (once each).
+function markPulled(r: Round, cardIds: string[]): void {
+  for (const id of cardIds) {
+    if (!r.owedThisTurn.some((o) => o.cardId === id && o.pulled))
+      r.owedThisTurn.push({ cardId: id, row: false, pulled: true });
   }
 }
 
@@ -1086,7 +1095,13 @@ function swapJoker(
   };
   hand.push(slot.card); // joker returns to hand
   r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
-  if (!r.owedThisTurn.some((o) => o.cardId === slot.card.id && !o.row))
+  // (a "pulled" entry for the same joker doesn't count: it must still be
+  // recorded as a swapped joker, which blocks starting a rearrange)
+  if (
+    !r.owedThisTurn.some(
+      (o) => o.cardId === slot.card.id && !o.row && !o.pulled,
+    )
+  )
     r.owedThisTurn.push({ cardId: slot.card.id, row: false });
   clearObligations(r, [replacement.id]);
   r.lastDraw = null;
@@ -1169,6 +1184,10 @@ function pullFromMeld(
     r.tableau = r.tableau.filter((m) => m.id !== meldId);
   }
   for (const slot of pulled) r.hands[r.current].push(slot.card);
+  markPulled(
+    r,
+    pulled.map((slot) => slot.card.id),
+  );
   syncObligations(r);
   r.lastDraw = null;
   logMsg(
@@ -1196,6 +1215,14 @@ function pullFromMeld(
 // r.tableau/r.hands are never touched until a successful commit, so nothing
 // else in the app sees an inconsistent state while a session is open.
 
+// Owed only because it was pulled back this turn (not a swapped joker).
+function isPulledOnly(r: Round, id: string): boolean {
+  return (
+    r.owedThisTurn.some((o) => o.cardId === id && o.pulled) &&
+    !r.owedThisTurn.some((o) => o.cardId === id && !o.row && !o.pulled)
+  );
+}
+
 function canStartRearrange(game: Game): boolean {
   const r = game.round as Round;
   return (
@@ -1207,7 +1234,11 @@ function canStartRearrange(game: Game): boolean {
     // 2026-07-27): it can be resolved by folding the card into a valid group
     // during the session (see commitRearrange, which clears the obligation
     // if that happens).
-    r.pendingObligations.every((id) => id === r.rowObligationCardId) &&
+    // A card pulled back this turn doesn't block it either (decision 29):
+    // the session can fold it straight back into a series.
+    r.pendingObligations.every(
+      (id) => id === r.rowObligationCardId || isPulledOnly(r, id),
+    ) &&
     !r.rearrange
   );
 }
@@ -1444,9 +1475,17 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   // §3 decision 16): a card still owed after the commit (the row-take card
   // left in hand; a session can't start with any other obligation open) must
   // stay layable, so the hand has to keep at least one more card than it owes.
-  const owedAfter = new Set(
-    r.owedThisTurn.map((o) => o.cardId).filter((id) => newHandIds.includes(id)),
-  ).size;
+  // Table cards this session moves to the hand count as pulled back
+  // (decision 29): they will be owed too.
+  const pulledToHand = newHandIds.filter(
+    (id) => rr.originalOwnerByCardId[id] !== undefined,
+  );
+  const owedAfter = new Set([
+    ...r.owedThisTurn
+      .map((o) => o.cardId)
+      .filter((id) => newHandIds.includes(id)),
+    ...pulledToHand,
+  ]).size;
   if (problems.length === 0 && newHandIds.length === 0) {
     problems.push({
       error:
@@ -1459,7 +1498,7 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   ) {
     problems.push({
       error:
-        "That would leave you holding only the card you owe, with no way to lay it. Keep another card in your hand, or put the owed card in a series.",
+        "That would leave you holding only cards you owe, with no way to lay them. Keep another card in your hand, or put the owed cards in a series.",
     });
   }
 
@@ -1489,11 +1528,15 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   // group (rather than left in hand), that resolves it the same way an
   // ordinary meld action would -- every group here has already passed
   // resolveGroup by this point, so there's nothing further to validate.
-  if (r.rowObligationCardId && !newHandIds.includes(r.rowObligationCardId)) {
-    clearObligations(r, [r.rowObligationCardId]);
-  }
+  // The same goes for any other owed card the session put on the table (a
+  // card pulled back earlier this turn, decision 29).
+  clearObligations(
+    r,
+    r.pendingObligations.filter((id) => !newHandIds.includes(id)),
+  );
   // ...and an owed card laid earlier this turn that the session moved back
-  // to the hand is owed again.
+  // to the hand is owed again, as is any table card it moved to the hand.
+  markPulled(r, pulledToHand);
   syncObligations(r);
   r.rearrange = null;
   r.lastDraw = null;

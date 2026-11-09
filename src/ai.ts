@@ -346,7 +346,7 @@ function playPart2(game: Game, policy: Policy): void {
           tryPlaceSingleCard(game, card, policy)) ||
         tryLayMeldContaining(game, cardId, hand, jokersLeft) ||
         (CascadeEngine.hasComeOut(game) &&
-          tryResolveObligationViaRearrange(game, cardId, hand));
+          tryResolveObligationViaRearrange(game, cardId, hand, policy));
       if (!placed) {
         // Genuinely stuck -- shouldn't happen given canResolvePickup/
         // canReplayJokerAfterSwap, but those are heuristic candidate
@@ -528,6 +528,7 @@ function tryResolveObligationViaRearrange(
   game: Game,
   cardId: string,
   hand: Card[],
+  policy: Policy,
 ): boolean {
   const r = game.round as Round;
   for (const meld of r.tableau) {
@@ -545,27 +546,58 @@ function tryResolveObligationViaRearrange(
       (c) => c.slots.length < virtualHand.length,
     );
     if (!candidate) continue;
-    try {
-      CascadeEngine.pullFromMeld(
-        game,
+    // Every card pulled back is owed too (DESIGN decision 29), so the
+    // dissolve only helps if the leftovers can all be laid again this turn.
+    // Try it on a copy first and only then apply it for real.
+    const sim = structuredClone(game) as Game;
+    sim.undoFor = undefined;
+    if (
+      !dissolveAndRelay(
+        sim,
         meld.id,
         ownCards.map((c) => c.id),
-      );
-    } catch {
-      continue; // shouldn't happen for a whole-meld dissolve, but the engine is the authority
-    }
-    try {
-      CascadeEngine.layNewMeld(game, candidate.slots);
-      return true;
-    } catch {
-      // The pull already succeeded and can't be cleanly undone here, but
-      // that's still a legal state (the cards just sit in hand) -- report
-      // failure and let the caller's existing fallback (undo the draw, or
-      // undo the draw) take over from there.
-      return false;
-    }
+        candidate.slots,
+        policy,
+      )
+    )
+      continue;
+    // Same Round object (the AI's memory is keyed on it), new contents.
+    Object.assign(r, sim.round as Round);
+    return true;
   }
   return false;
+}
+
+// Dissolve one of our own series, lay the candidate containing the owed card,
+// then lay every pulled-back leftover again. True only if nothing is owed at
+// the end; on false the copy is simply thrown away.
+function dissolveAndRelay(
+  game: Game,
+  meldId: string,
+  cardIds: string[],
+  slots: SlotSpec[],
+  policy: Policy,
+): boolean {
+  const r = game.round as Round;
+  try {
+    CascadeEngine.pullFromMeld(game, meldId, cardIds);
+    CascadeEngine.layNewMeld(game, slots);
+  } catch {
+    return false;
+  }
+  for (let guard = 0; r.pendingObligations.length > 0 && guard < 12; guard++) {
+    const id = r.pendingObligations[0];
+    const hand = r.hands[r.current];
+    const card = hand.find((c) => c.id === id);
+    if (!card) return false;
+    const jokers = hand.filter((c) => c.rank === "JOKER");
+    if (
+      !tryPlaceSingleCard(game, card, policy) &&
+      !tryLayMeldContaining(game, id, hand, jokers)
+    )
+      return false;
+  }
+  return r.pendingObligations.length === 0;
 }
 
 function tryLayMeldContaining(

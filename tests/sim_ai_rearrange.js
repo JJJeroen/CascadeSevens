@@ -61,7 +61,10 @@ function pick(rng, arr) {
 // this doesn't change which mechanism resolves it, just exercises both
 // ends across trials.
 function makeStrandedObligationState(rng, current) {
-  const runLen = 3;
+  // 4 cards, so the 3 left after freeing the end card can be laid again as a
+  // run -- pulled-back cards are owed too (DESIGN decision 29). A spare card
+  // keeps the hand from being emptied by that re-lay.
+  const runLen = 4;
   const suit = pick(rng, SUITS);
   const startIdx = Math.floor(rng() * (RANKS.length - runLen));
   const runRanks = RANKS.slice(startIdx, startIdx + runLen);
@@ -84,7 +87,10 @@ function makeStrandedObligationState(rng, current) {
   ];
   const obligatedCard = card(targetRank, suitA);
   const fillerCard = card(targetRank, suitB);
-  const hand = [obligatedCard, fillerCard];
+  const spareRank = RANKS.find(
+    (r) => !runRanks.includes(r) && r !== targetRank,
+  );
+  const hand = [obligatedCard, fillerCard, card(spareRank, otherSuits[2])];
 
   const game = {
     scores: [0, 0],
@@ -97,6 +103,7 @@ function makeStrandedObligationState(rng, current) {
       comeOut: current === 0 ? [true, false] : [false, true],
       part: 2,
       current,
+      nextMeldSeq: 0,
       pendingObligations: [obligatedCard.id],
       owedThisTurn: [{ cardId: obligatedCard.id, row: false }],
       rowObligationCardId: null, // meld-only obligation -- not discard-eligible, forces a real meld
@@ -105,7 +112,8 @@ function makeStrandedObligationState(rng, current) {
       log: [],
     },
   };
-  return { game, meldId, obligatedCard, targetRank };
+  const origRunIds = runRanks.map((r) => `${r}${suit}`);
+  return { game, meldId, obligatedCard, targetRank, origRunIds };
 }
 
 const TRIALS = 1000;
@@ -114,7 +122,7 @@ let resolvedViaDissolve = 0;
 for (let t = 0; t < TRIALS; t++) {
   const rng = seededRng(t * 7919 + 12321);
   const current = t % 2;
-  const { game, meldId, obligatedCard, targetRank } =
+  const { game, meldId, obligatedCard, targetRank, origRunIds } =
     makeStrandedObligationState(rng, current);
 
   CascadeAI.takeTurn(game, { onStateChanged: () => {} });
@@ -126,12 +134,20 @@ for (let t = 0; t < TRIALS; t++) {
     );
     process.exit(1);
   }
-  const originalMeldStillIntact = r.tableau.some(
-    (m) => m.id === meldId && m.slots.length === 3,
-  );
+  const originalMeldStillIntact = r.tableau.some((m) => m.id === meldId);
   if (originalMeldStillIntact) {
     console.log(
       `FAIL trial ${t}: original meld ${meldId} is still intact -- the AI resolved the obligation some other way than dissolving it, which shouldn't be possible in this fixture`,
+    );
+    process.exit(1);
+  }
+  // The pulled-back leftovers are owed too (DESIGN decision 29): none of
+  // the original run's cards may stay in the hand.
+  const runIds = new Set(origRunIds);
+  const leftInHand = r.hands[current].filter((c) => runIds.has(c.id));
+  if (leftInHand.length) {
+    console.log(
+      `FAIL trial ${t}: pulled card(s) ${leftInHand.map((c) => c.id)} left in hand -- they must be laid again`,
     );
     process.exit(1);
   }

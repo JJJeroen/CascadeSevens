@@ -61,6 +61,11 @@ export interface Turn0State {
 export interface OwedCard {
   cardId: string;
   row: boolean; // the cascade take's card (vs. a swapped-out joker)
+  // A card pulled back from the table this turn (pull-back or a rearrange
+  // that moves it to the hand): it must be laid again before the turn ends
+  // (DESIGN decision 29). Unlike a swapped joker it doesn't block starting a
+  // rearrange, which can fold it straight back into a series.
+  pulled?: boolean;
 }
 
 export interface LastDraw {
