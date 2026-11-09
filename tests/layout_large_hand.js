@@ -369,6 +369,10 @@ async function testStaleTarget(page, vp) {
     r.part = 2; r.current = 0; r.ended = false; r.comeOut[0] = true; r.rearrange = null;
     window.__t.setHand(5);
     window.__t.setTableau([window.__t.run("m1", "H", 0, 4)]);
+    // All four cards yours, so the Pull button applies (it only shows when
+    // pulling your this-turn cards would leave a valid series, decision 30).
+    window.__cascadeTest.getGame().round.tableau[0].slots.forEach((s) => (s.ownerId = 0));
+    window.__cascadeTest.render();
     document.querySelector("#tableau .meld").click();
   })()`);
   const shown = () =>
