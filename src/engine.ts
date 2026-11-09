@@ -617,6 +617,10 @@ function validateNewMeldSelection(
 ): MeldSelectionCheck {
   if (slots.length < 3)
     return { ok: false, error: "A series needs at least 3 cards." };
+  // The same card id twice would make layNewMeld splice(-1) a different
+  // card out of the hand (found in the online-play review).
+  if (new Set(slots.map((s) => s.cardId)).size !== slots.length)
+    throw new Error("The same card can't be used twice.");
   const cards: AssignedCard[] = slots.map((s) => {
     const c = hand.find((h) => h.id === s.cardId);
     if (!c) throw new Error("Selected card not in hand.");
