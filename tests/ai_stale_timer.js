@@ -4,10 +4,10 @@
 // Turn 0 offer or melding their hand -- after a quick "New Game". That showed
 // up as a ~25% flake in smoke_browser.js ("expected hand to shrink by 3...").
 //
-// Scenario (found by retrying until the dice line up): game A starts with the
-// AI to move (so an AI timer is pending), then game B starts at once with the
-// HUMAN to move at Turn 0. After the AI delay has passed, B must still be
-// waiting on the human.
+// Scenario: game A reaches a round the AI starts (round 2, via menu -> Round
+// 2; player 1 starts round 1 since 2026-11-08), so an AI timer is pending;
+// then game B starts at once with the HUMAN to move at Turn 0. After the AI
+// delay has passed, B must still be waiting on the human.
 
 import { findBrowser, startStaticServer, connect } from "./browser_harness.js";
 
@@ -37,6 +37,11 @@ async function main() {
       const outcome = await page.evalJs(`(() => {
         const T = window.__cascadeTest;
         document.querySelector("#newGameBtn").click();
+        // Round 2 is the AI's to start: menu -> Round 2, then confirm.
+        document.querySelector("#menuRoundBtn").click();
+        [...document.querySelectorAll("#dialogRoot button")]
+          .find((b) => b.textContent === "Round 2")
+          ?.click();
         const a = T.turn0Askee();
         document.querySelector("#newGameBtn").click();
         const b = T.turn0Askee();
