@@ -104,6 +104,7 @@ function makeStrandedObligationState(rng, current) {
       part: 2,
       current,
       nextMeldSeq: 0,
+      tableAtTurnStart: [], // the run counts as laid this turn (decision 30)
       pendingObligations: [obligatedCard.id],
       owedThisTurn: [{ cardId: obligatedCard.id, row: false }],
       rowObligationCardId: null, // meld-only obligation -- not discard-eligible, forces a real meld

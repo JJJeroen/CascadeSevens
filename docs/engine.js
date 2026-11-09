@@ -103,6 +103,7 @@ function startRound(game, rng = Math.random) {
         // take's bottom card. Only the newest take's bottom card is owed.
         rowObligationCardId: null,
         owedThisTurn: [], // every card owed this turn, laid or not (see syncObligations)
+        tableAtTurnStart: [], // only cards laid after this can be pulled back (decision 30)
         lastDraw: null, // undoable until any other Part 2 action happens
         rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
         turnStart: null,
@@ -1028,6 +1029,10 @@ function pullFromMeld(game, meldId, cardIds) {
     if (notMine) {
         throw new Error(`Can't pull ${notMine.card.rank}${notMine.card.suit || ""} — it's credited to the other player, and you can only pull back cards you placed yourself.`);
     }
+    const earlier = pulled.find((slot) => !isLaidThisTurn(game, slot.card.id));
+    if (earlier) {
+        throw new Error(`Can't pull ${earlier.card.rank}${earlier.card.suit || ""} — you laid it in an earlier turn, and you can only pull back cards you laid this turn.`);
+    }
     if (remaining.length > 0) {
         const check = remaining.length >= 3
             ? validateMeldSlots(remaining)
@@ -1296,6 +1301,15 @@ function commitRearrange(game) {
                 error: `${c.rank}${c.suit || ""} belongs to the other player and can't be left in your hand — it must stay in some series.`,
             });
         }
+        else if (originalOwner !== undefined && !isLaidThisTurn(game, cardId)) {
+            // Taking it into your hand would be pulling back an earlier turn's
+            // card (decision 30); regrouping it on the table is fine.
+            const c = rr.cardById[cardId];
+            problems.push({
+                cardId,
+                error: `${c.rank}${c.suit || ""} was laid in an earlier turn and can't go back to your hand — it must stay in some series.`,
+            });
+        }
     }
     const newHandIds = rr.handPool.slice();
     // The same guard every other meld action runs (assertLeavesHandUsable,
@@ -1454,8 +1468,14 @@ function advanceTurn(game) {
     r.rowDrawsThisPart1 = 0;
     r.comeOutAttempt = null;
     r.owedThisTurn = [];
+    r.tableAtTurnStart = r.tableau.flatMap((m) => m.slots.map((s) => s.card.id));
     r.turnStart = null;
     r.undoStack = [];
+}
+// You may only pull back cards you laid this turn (REGELS: "Alleen kaarten
+// die jij zelf legde in die beurt"; DESIGN decision 30).
+function isLaidThisTurn(game, cardId) {
+    return !game.round.tableAtTurnStart.includes(cardId);
 }
 // --- Round / game end ---------------------------------------------------
 function endRoundHandOut(game, winnerIdx) {
@@ -1571,6 +1591,7 @@ export const CascadeEngine = {
     swapJoker: recorded(swapJoker),
     pullFromMeld: recorded(pullFromMeld),
     canStartRearrange,
+    isLaidThisTurn,
     startRearrange: recorded(startRearrange),
     rearrangeState,
     rearrangeMoveCard,
