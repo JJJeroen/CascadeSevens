@@ -138,6 +138,7 @@ function startRound(game: Game, rng: () => number = Math.random): Game {
     // take's bottom card. Only the newest take's bottom card is owed.
     rowObligationCardId: null,
     owedThisTurn: [], // every card owed this turn, laid or not (see syncObligations)
+    tableAtTurnStart: [], // only cards laid after this can be pulled back (decision 30)
     lastDraw: null, // undoable until any other Part 2 action happens
     rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
     turnStart: null,
@@ -387,6 +388,9 @@ function restartTurn(game: Game): void {
   r.hands[r.current] = start.hand;
   r.openRow = start.openRow;
   r.tableau = start.tableau;
+  // The table is back as it was when the turn began (or just after the pile
+  // draw, which doesn't touch it): undo a swap's change to this list.
+  r.tableAtTurnStart = r.tableau.flatMap((m) => m.slots.map((s) => s.card.id));
   r.comeOut[r.current] = start.comeOut;
   r.comeOutAccum[r.current] = start.comeOutAccum;
   r.comeOutAttempt = null;
@@ -1094,6 +1098,9 @@ function swapJoker(
     wildAs: null,
   };
   hand.push(slot.card); // joker returns to hand
+  // It left the table, so when it is laid again it counts as laid this turn
+  // (decision 30). Undo snapshots restore the list; restartTurn recomputes it.
+  r.tableAtTurnStart = r.tableAtTurnStart.filter((id) => id !== slot.card.id);
   r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
   // (a "pulled" entry for the same joker doesn't count: it must still be
   // recorded as a swapped joker, which blocks starting a rearrange)
@@ -1166,6 +1173,12 @@ function pullFromMeld(
   if (notMine) {
     throw new Error(
       `Can't pull ${notMine.card.rank}${notMine.card.suit || ""} — it's credited to the other player, and you can only pull back cards you placed yourself.`,
+    );
+  }
+  const earlier = pulled.find((slot) => !isLaidThisTurn(game, slot.card.id));
+  if (earlier) {
+    throw new Error(
+      `Can't pull ${earlier.card.rank}${earlier.card.suit || ""} — you laid it in an earlier turn, and you can only pull back cards you laid this turn.`,
     );
   }
   if (remaining.length > 0) {
@@ -1467,6 +1480,14 @@ function commitRearrange(game: Game): CommitRearrangeResult {
         cardId,
         error: `${c.rank}${c.suit || ""} belongs to the other player and can't be left in your hand — it must stay in some series.`,
       });
+    } else if (originalOwner !== undefined && !isLaidThisTurn(game, cardId)) {
+      // Taking it into your hand would be pulling back an earlier turn's
+      // card (decision 30); regrouping it on the table is fine.
+      const c = rr.cardById[cardId];
+      problems.push({
+        cardId,
+        error: `${c.rank}${c.suit || ""} was laid in an earlier turn and can't go back to your hand — it must stay in some series.`,
+      });
     }
   }
 
@@ -1654,8 +1675,15 @@ function advanceTurn(game: Game): void {
   r.rowDrawsThisPart1 = 0;
   r.comeOutAttempt = null;
   r.owedThisTurn = [];
+  r.tableAtTurnStart = r.tableau.flatMap((m) => m.slots.map((s) => s.card.id));
   r.turnStart = null;
   r.undoStack = [];
+}
+
+// You may only pull back cards you laid this turn (REGELS: "Alleen kaarten
+// die jij zelf legde in die beurt"; DESIGN decision 30).
+function isLaidThisTurn(game: Game, cardId: string): boolean {
+  return !(game.round as Round).tableAtTurnStart.includes(cardId);
 }
 
 // --- Round / game end ---------------------------------------------------
@@ -1784,6 +1812,7 @@ export const CascadeEngine = {
   swapJoker: recorded(swapJoker),
   pullFromMeld: recorded(pullFromMeld),
   canStartRearrange,
+  isLaidThisTurn,
   startRearrange: recorded(startRearrange),
   rearrangeState,
   rearrangeMoveCard,

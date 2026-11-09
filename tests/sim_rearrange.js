@@ -119,6 +119,7 @@ function makeRandomState(rng) {
       comeOut: [true, true],
       part: 2,
       pendingObligations: [],
+      tableAtTurnStart: [], // every table card counts as laid this turn here
       owedThisTurn: [],
       rowObligationCardId: null,
       rearrange: null,

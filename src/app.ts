@@ -854,7 +854,8 @@ function renderTableau(): void {
         targetedMeldId = meld.id;
         render();
       });
-      if (canRearrange && slot.ownerId === 0) {
+      const laidNow = CascadeEngine.isLaidThisTurn(g, slot.card.id);
+      if (canRearrange && slot.ownerId === 0 && laidNow) {
         attachDragSource(cardEl, {
           kind: "meld",
           cardId: slot.card.id,
@@ -868,7 +869,9 @@ function renderTableau(): void {
           cardEl,
           !r.comeOut[0]
             ? "You can only pull cards back after you've come out (40 points or more in one turn)."
-            : `${cardText(slot.card)} counts for the AI, so you can't pull it back; you can only pull back cards you laid yourself. To regroup it anyway, use "Rearrange…".`,
+            : slot.ownerId === 0
+              ? `You laid ${cardText(slot.card)} in an earlier turn; you can only pull back cards you laid this turn. To regroup it anyway, use "Rearrange…".`
+              : `${cardText(slot.card)} counts for the AI, so you can't pull it back; you can only pull back cards you laid yourself. To regroup it anyway, use "Rearrange…".`,
         );
       }
       cardsWrap.appendChild(cardEl);
@@ -1704,8 +1707,11 @@ function renderControls(): void {
       selected.length === 1 &&
       targetedHasJoker
     );
+  // Only cards you laid this turn can be pulled back (decision 30), and only
+  // if the series left behind stays valid: try the pull on a copy.
+  const pullable = !!targetedMeldId && pullOwnCardsWouldWork(g, targetedMeldId);
   $<HTMLButtonElement>("pullMeldBtn").disabled =
-    rearranging || !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
+    rearranging || !(isHumanTurn && r.part === 2 && comeOut && pullable);
   // Mirrors engine.ts's discard() legality: nothing may still be owed.
   const canDiscardSelected =
     selected.length === 1 && r.pendingObligations.length === 0;
@@ -1882,6 +1888,30 @@ $("swapJokerBtn").addEventListener("click", () => {
   }
 });
 
+// The cards the Pull button pulls from a series: yours, laid this turn.
+function pullableOwnCardIds(g: Game, meld: Meld): string[] {
+  return meld.slots
+    .filter(
+      (s) => s.ownerId === 0 && CascadeEngine.isLaidThisTurn(g, s.card.id),
+    )
+    .map((s) => s.card.id);
+}
+
+function pullOwnCardsWouldWork(g: Game, meldId: string): boolean {
+  const meld = g.round?.tableau.find((m) => m.id === meldId);
+  if (!meld) return false;
+  const ids = pullableOwnCardIds(g, meld);
+  if (ids.length === 0) return false;
+  try {
+    const copy = structuredClone(g) as Game;
+    copy.undoFor = undefined;
+    CascadeEngine.pullFromMeld(copy, meldId, ids);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 $("pullMeldBtn").addEventListener("click", () => {
   const meld = (game as Game).round?.tableau.find(
     (m) => m.id === targetedMeldId,
@@ -1890,12 +1920,11 @@ $("pullMeldBtn").addEventListener("click", () => {
   // Only pull cards this player actually owns — a meld can be a mix of
   // both players' cards (either can add to any meld), but pulling is
   // restricted to what you placed yourself.
-  const ownCardIds = meld.slots
-    .filter((s) => s.ownerId === 0)
-    .map((s) => s.card.id);
+  const g = game as Game;
+  const ownCardIds = pullableOwnCardIds(g, meld);
   if (ownCardIds.length === 0)
     return showError(
-      "You don't have any cards of your own in this series to pull.",
+      "You have no cards in this series that you laid this turn — only those can be pulled back.",
     );
   try {
     CascadeEngine.pullFromMeld(game as Game, meld.id, ownCardIds);

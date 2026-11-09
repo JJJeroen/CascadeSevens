@@ -141,6 +141,9 @@ export interface Round {
   pendingObligations: string[];
   rowObligationCardId: string | null;
   owedThisTurn: OwedCard[]; // see OwedCard; pendingObligations = these, while in hand
+  // Card ids on the table when this turn began: only cards laid since then can
+  // be pulled back (REGELS, DESIGN decision 30).
+  tableAtTurnStart: string[];
   lastDraw: LastDraw | null;
   rearrange: RearrangeSession | null;
   rowDrawsThisPart1: number;
