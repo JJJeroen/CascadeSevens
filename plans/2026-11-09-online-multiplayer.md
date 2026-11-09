@@ -100,10 +100,22 @@ The server keeps a **step log**: `{seq, seat, kind, publicSummary, view}` with `
 
 Each step is its own PR, with an Opus review in a fresh context, as in the rest of this repo. Step 0 produces the answer to the only real technical doubt, so do it before anything else.
 
-## 10. Open questions for the owner
+## 10. Cheating and resuming (added after the owner's questions)
 
-1. **Option B (play locally, send the turn) vs. A (every action to the server)?** Recommended B; step 0 verifies it.
-2. **Live or slow?** Are both players usually online together (then a short clock and 3 s polling matter most) or taking turns over days (then push matters most)? And is Quick (300) the online default?
-3. **Wait for Mountain Mayhem's #65/#66 to be tested on phones and deployed first**, so Cascade copies something proven? (Recommended; step 0-1 can start meanwhile, they do not need the server.)
-4. **Google Play:** an online game with a server and user-chosen names needs a privacy policy and Data Safety answers. Needed before the Play release, not before a friends-only APK.
-5. **Tommer/Jelle:** do they want a say in the online lobby screens (Figma has none)?
+**Cheating with a modified app.** The server is the referee, so a hacked client gains nothing the rules do not allow **[reasoned, not yet tested]**:
+- Every turn bundle is replayed on the server's own `Game` with the real engine. Illegal moves, cards not in hand, or a turn that does not end legally are refused (409).
+- Hidden cards never leave the server (section 4), so there is nothing to read out of the app's memory. The deal and pile order come from a server-side `crypto` random.
+- The pile draw is one server call, **once per turn**, recorded by the server; a turn bundle cannot contain a different draw, and a draw cannot be taken back, so nobody can re-draw for a better card.
+- Undo inside a turn stays a normal rule (local); only the final result of the turn is sent.
+- Not preventable, as in any online card game: using an outside program to compute the best move.
+- Tests for step 0/1: a serialized view never contains a hidden card, and tampered bundles (extra card, wrong order, second draw, wrong player, stale `seq`) are all refused.
+
+**Resuming.** The game lives on the server (Game DO), so it can be reopened any time from the games list and the app gets the latest view. A turn that is half played when the app closes: the drawn card is on the server and comes back with the view; the actions made locally are saved by the app (localStorage, keyed by game and `seq`) and replayed on reopening. If that save is gone, the player starts the turn over from the drawn card. Mountain Mayhem's save/resume is the model.
+
+## 11. Open questions for the owner
+
+Answered 2026-11-09 (owner): **1. option B**; **2. mostly both online at the same time**, but a game must be resumable later (so: short polling and a short default clock matter most; push is step 6); **3. yes, wait for Mountain Mayhem's phone test and deploy** (steps 0 and 1 can start meanwhile); **4. understood** (privacy policy before Play).
+
+Still open:
+- Is Quick (300) the online default, given mostly-live play? (A full 1000 game is long even live.)
+- Tommer/Jelle: do they want a say in the online lobby screens (the Figma has none)?
