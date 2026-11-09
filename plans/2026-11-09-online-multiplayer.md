@@ -119,3 +119,56 @@ Answered 2026-11-09 (owner): **1. option B**; **2. mostly both online at the sam
 Still open:
 - Is Quick (300) the online default, given mostly-live play? (A full 1000 game is long even live.)
 - Tommer/Jelle: do they want a say in the online lobby screens (the Figma has none)?
+
+## 12. Independent review (Opus, 2026-11-09) and what changes
+
+An independent review ran exploits against the compiled engine. Verdict: Option B stays, but section 10's claim
+"the engine throws on illegal moves, so replaying is enough" is **not true** for forged input. Mountain Mayhem is safe
+because a move must equal one of `legalActions`; Cascade has no such list. Findings that change the plan
+(verified by running code unless marked):
+
+**Must be solved before any online play (hard requirements for step 1):**
+1. **Forged melds.** `layNewMeld` does not reject duplicate card ids; `splice(-1, 1)` then removes the last hand card.
+   A bundle of seven copies of one id was accepted as a "set" and won round 1 on turn 1. This is also a bug in the
+   offline engine (a hacked client, not normal play). Fix: schema check on every action (verb whitelist, real deck ids,
+   no duplicates, no `__proto__`), make `layNewMeld` throw on a missing card, and after every replay validate every meld
+   and check the 54 ids are distinct across pile, row, hands and table.
+2. **Turn boundary.** The engine acts on `r.current`, so a bundle could continue into the opponent's turn, and the error
+   text becomes an oracle for their hand (45 requests recovered 7 cards). Fix: per-action check that `r.current === seat`,
+   stop at the first turn end, never accept `drawFromClosedPile`, `turn0*` or `startRound` inside a bundle, and answer
+   409 with only the failing action's index and a generic reason.
+3. **Engine version.** Rules changed three times this week and games last days, so "refuse on a different rulesVersion"
+   would kill most running games; and with Option B the client's local engine decides ids and results, so any engine
+   change can silently diverge (the app version moves on every PR, so `MIN_APP_VERSION` does not protect). Decision
+   needed (see open questions): pin each game to an engine build kept in the Worker, or freeze the rules before launch.
+   Either way: engine hash on every call and a final-state hash in each bundle.
+
+**Design corrections:**
+- `/draw` returns the **full post-draw view**; the client replaces its state and clears its action log (otherwise meld ids
+  diverge after "Start turn over", because `restartTurn` does not reset `nextMeldSeq`). `/draw` is idempotent so a lost
+  response can be retried.
+- Undo: decide in step 0 whether bundles include undo (server sets `undoFor = seat`) or the client sends a net list.
+- Views drop `round.log` entirely (take-back lines reveal ranks). Public summaries are built from public-zone changes only;
+  raw bundles are never stored in steps.
+- Turn 0: whose move it is comes from `turn0CurrentAskee`, not `r.current`; permission check, clock and forfeit target use it.
+- Engine is not atomic (`rearrangeMoveCard`, take-back): throw away the in-memory game on any error, as MM's `#run` does.
+  `commitRearrange` returns `{ok:false}` instead of throwing: treat as failure.
+- Shuffle rng: a crypto-backed function, never the engine's 32-bit `seededRng`. Seat 0 must not always start: assign
+  seats at random on the server.
+- Round end: capture the end-of-round view before `startRound`; decide whether the next deal waits for both players. The
+  client must not show its own round score (it runs on placeholder cards).
+- Step 2 shortcut to evaluate: `viewFor` rotates seats so the client is always seat 0 (app.ts hard-codes seat 0).
+- Clock: owner expects mostly-live play, so offer a short live clock that pauses (not forfeits) plus a long resume clock.
+- Free-plan quota: verify tokens in the Worker with an HMAC instead of a Directory call, and poll slower during the
+  opponent's turn. Raise MAX_BODY above 16 KiB if long rearranges need it.
+
+**Step 0 spike gets bigger:** record engine calls from random human-style walks (undo, take-back, restart, rearrange:
+reuse `tests/sim_rearrange.js`), not only AI games (the AI never uses those paths); a forged-bundle fuzzer; key-order-stable
+state comparison; the decision on undo and on engine pinning.
+
+**Status correction:** Mountain Mayhem's #65/#66 are merged (c700861, bb82ec4), but still not phone-tested by the owner.
+
+Scripts that reproduce the exploits are in the review's scratchpad (`forge2.mjs`, `oracle.mjs`, `diverge.mjs`, `forge.mjs`).
+
+New open question for the owner: **engine pinning or rules freeze?** (item 3 above). Recommendation: freeze the rules
+for online launch, plus the engine-hash check, and add pinning later only if rules must change while games are running.
