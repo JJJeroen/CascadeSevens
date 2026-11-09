@@ -172,3 +172,7 @@ Scripts that reproduce the exploits are in the review's scratchpad (`forge2.mjs`
 
 New open question for the owner: **engine pinning or rules freeze?** (item 3 above). Recommendation: freeze the rules
 for online launch, plus the engine-hash check, and add pinning later only if rules must change while games are running.
+
+**Owner's answer (engine version):** only 2-3 testers for now, so a rules change that ends running games is acceptable.
+Decision: no engine pinning. Keep the engine-hash check, refuse moves on a mismatch, and let testers start a new game
+after a rules change. Revisit pinning only before a public launch.
