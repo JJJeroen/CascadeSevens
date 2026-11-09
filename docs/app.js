@@ -1889,6 +1889,14 @@ function confirmThen(title, body, label, go) {
         { label, onClick: go },
     ]);
 }
+// Changing the level or the goal starts a new game: ask first while a game is
+// in progress (same rule as menu -> New).
+function confirmNewGameThen(go) {
+    const g = game;
+    if (g.gameOver || g.round.ended)
+        return go();
+    confirmThen("Start a new game?", "The game in progress will be lost.", "New game", go);
+}
 $("menuNewBtn").addEventListener("click", () => {
     closeMenu();
     const g = game;
@@ -1907,31 +1915,44 @@ $("menuRoundBtn").addEventListener("click", () => {
 });
 $("menuGoalBtn").addEventListener("click", () => {
     closeMenu();
+    const current = game.mode;
     const pick = (mode) => () => {
-        $("modeSelect").value = mode;
-        newGame();
+        if (mode === current)
+            return; // the goal you already have: just close
+        confirmNewGameThen(() => {
+            $("modeSelect").value = mode;
+            newGame();
+        });
     };
     showDialog("Game goal", "First to pass the goal wins. Changing it starts a new game.", [
-        { label: "300", onClick: pick("quick"), secondary: true },
-        { label: "1000", onClick: pick("standard") },
+        { label: "300", onClick: pick("quick"), secondary: current !== "quick" },
+        {
+            label: "1000",
+            onClick: pick("standard"),
+            secondary: current !== "standard",
+        },
     ]);
 });
 $("menuLevelBtn").addEventListener("click", () => {
     closeMenu();
     const pick = (level) => () => {
-        const previous = aiLevel;
-        aiLevel = level;
-        // newGame refuses (bad seed): keep the old level, as no new game started.
-        if (!newGame()) {
-            aiLevel = previous;
-            return;
-        }
-        try {
-            localStorage.setItem(LEVEL_KEY, level);
-        }
-        catch {
-            /* storage unavailable: the level lasts until reload */
-        }
+        if (level === aiLevel)
+            return; // the level you already have: just close
+        confirmNewGameThen(() => {
+            const previous = aiLevel;
+            aiLevel = level;
+            // newGame refuses (bad seed): keep the old level, as no new game started.
+            if (!newGame()) {
+                aiLevel = previous;
+                return;
+            }
+            try {
+                localStorage.setItem(LEVEL_KEY, level);
+            }
+            catch {
+                /* storage unavailable: the level lasts until reload */
+            }
+        });
     };
     showDialog("Opponent", "How well the AI plays. Changing it starts a new game.", AI_LEVELS.map((level) => ({
         label: LEVEL_LABELS[level],
