@@ -242,6 +242,45 @@ check("a rearrange may not leave the hand holding only pulled cards", () => {
   if (r.pendingObligations.length !== 3) throw new Error("the kings are owed");
 });
 
+check(
+  "a pulled joker that is then swapped out still counts as a swapped joker",
+  () => {
+    const g = rig({
+      hand0: ["8H", "2D", "QC"],
+      tableau: [
+        {
+          type: "run",
+          cards: [
+            ["5H", 0],
+            ["6H", 0],
+            ["7H", 0],
+          ],
+        },
+      ],
+    });
+    const r = g.round;
+    // Put a joker of ours on the run as 8H, pull it back, add it again, then
+    // swap it out with the real 8H.
+    r.tableau[0].slots.push({
+      card: { id: "JOKER-1", rank: "JOKER", suit: null },
+      ownerId: 0,
+      wildAs: { rank: "8" },
+    });
+    r.closedPile = r.closedPile.filter((c) => c.id !== "JOKER-1");
+    E.pullFromMeld(g, "t0", ["JOKER-1"]);
+    E.addToMeld(g, "t0", "JOKER-1", { rank: "8" });
+    E.swapJoker(g, "t0", "JOKER-1", "8H");
+    if (
+      !r.owedThisTurn.some((o) => o.cardId === "JOKER-1" && !o.row && !o.pulled)
+    )
+      throw new Error(
+        `no swapped-joker entry: ${JSON.stringify(r.owedThisTurn)}`,
+      );
+    if (E.canStartRearrange(g))
+      throw new Error("an owed swapped-out joker blocks starting a rearrange");
+  },
+);
+
 check("undo after a pull-back clears the obligation with it", () => {
   const g = rig({ hand0: ["2D", "QC"], tableau: [kings], undoFor: 0 });
   const r = g.round;

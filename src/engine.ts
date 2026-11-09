@@ -1093,7 +1093,13 @@ function swapJoker(
   };
   hand.push(slot.card); // joker returns to hand
   r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
-  if (!r.owedThisTurn.some((o) => o.cardId === slot.card.id && !o.row))
+  // (a "pulled" entry for the same joker doesn't count: it must still be
+  // recorded as a swapped joker, which blocks starting a rearrange)
+  if (
+    !r.owedThisTurn.some(
+      (o) => o.cardId === slot.card.id && !o.row && !o.pulled,
+    )
+  )
     r.owedThisTurn.push({ cardId: slot.card.id, row: false });
   clearObligations(r, [replacement.id]);
   r.lastDraw = null;
