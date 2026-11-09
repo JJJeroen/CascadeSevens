@@ -202,6 +202,8 @@ function buildCardEl(card, opts = {}) {
             el.appendChild(suitSpan);
         }
         el.title = `Joker standing in for ${opts.wildAs.rank}${opts.wildAs.suit ? SUIT_SYMBOL[opts.wildAs.suit] : ""}`;
+        if (opts.wildAs.suit)
+            el.dataset.pip = SUIT_SYMBOL[opts.wildAs.suit];
     }
     else if (card.rank === "JOKER") {
         el.textContent = "JOKER";
@@ -218,6 +220,7 @@ function buildCardEl(card, opts = {}) {
         suitSpan.className = "suit";
         suitSpan.textContent = SUIT_SYMBOL[card.suit];
         el.append(rankSpan, suitSpan);
+        el.dataset.pip = SUIT_SYMBOL[card.suit]; // big suit, bottom right (style.css)
     }
     if (opts.onClick)
         el.addEventListener("click", opts.onClick);
@@ -306,10 +309,20 @@ function render() {
         const pending = game.round?.ended
             ? 0
             : CascadeEngine.roundMeldPointsSoFar(game, i);
-        $(i === 0 ? "scoreP1" : "scoreP2").textContent =
-            String(game.scores[i]) + (pending > 0 ? ` (+${pending})` : "");
+        // Score chip: the total, plus this round's laid points in smaller type.
+        const total = document.createElement("span");
+        total.className = "total";
+        total.textContent = String(game.scores[i]);
+        if (pending > 0) {
+            const p = document.createElement("span");
+            p.className = "pending";
+            p.textContent = ` +${pending}`;
+            total.appendChild(p);
+        }
+        $(i === 0 ? "scoreP1" : "scoreP2").replaceChildren(total);
     });
     $("roundNum").textContent = String(game.roundNumber);
+    $("goalLabel").textContent = `race to ${game.threshold}`;
     $("pileCount").textContent = String(game.round.closedPile.length);
     $("currentSeed").textContent =
         currentSeed === null ? "–" : String(currentSeed);
@@ -342,6 +355,9 @@ const MELD_OVERLAP_DEFAULT = 16;
 const MELD_OVERLAP_MAX = 22; // leaves an 18px strip
 function fitMeldOverlaps() {
     const tableau = $("tableau");
+    // clientWidth includes the table's own padding (the panel look)
+    const cs = getComputedStyle(tableau);
+    const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
     tableau.querySelectorAll(".meld").forEach((box) => {
         const wrap = box.querySelector(".meld-cards");
         if (!wrap)
@@ -351,7 +367,7 @@ function fitMeldOverlaps() {
         if (n < 2)
             return;
         const chrome = box.offsetWidth - wrap.offsetWidth; // meld padding + border
-        const avail = tableau.clientWidth - chrome;
+        const avail = tableau.clientWidth - pad - chrome;
         // total width = n*cardW - (n-1)*overlap; solve for the overlap that fits
         const needed = (n * MELD_CARD_W - avail) / (n - 1);
         const overlap = Math.min(MELD_OVERLAP_MAX, Math.max(MELD_OVERLAP_DEFAULT, needed));

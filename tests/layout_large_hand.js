@@ -753,8 +753,8 @@ async function testBlockedPullHint(page, vp) {
 async function testOwnerColors(page, vp) {
   const tag = `${vp.name} owner-colors`;
   const q = (js) => page.evalJs(js);
-  const YOU = "rgb(255, 179, 71)";
-  const THEM = "rgb(90, 169, 255)";
+  const YOU = "rgb(255, 159, 67)";
+  const THEM = "rgb(92, 155, 255)";
   await q(`window.__t.setHand(5)`);
   // the helper alternates owners: card 0 -> you, card 1 -> the AI, ...
   await q(`window.__t.setTableau([window.__t.run("o1", "H", 0, 3)])`);
@@ -764,8 +764,9 @@ async function testOwnerColors(page, vp) {
     return {
       first: shadow(cards[0]), second: shadow(cards[1]),
       hand: shadow(document.querySelector("#hand .card")),
-      score1: getComputedStyle(document.querySelector("#scoreP1")).color,
-      score2: getComputedStyle(document.querySelector("#scoreP2")).color,
+      // the chip's label ("YOU" / "AI") carries the player colour
+      score1: getComputedStyle(document.querySelector("#scoreP1"), "::before").color,
+      score2: getComputedStyle(document.querySelector("#scoreP2"), "::before").color,
     };
   })()`);
   if (!s.first.includes(YOU))
@@ -809,8 +810,9 @@ async function testJokerObligation(page, vp) {
     fail(`${tag}: unexpected status text ${JSON.stringify(s.label)}`);
 }
 
-// Both total scores live in the screen corners: the AI's top right, yours
-// bottom right -- with or without the opponent's "out" badge showing.
+// Both totals sit as chips in the top-right corner (Night Cascade look,
+// 2026-11-08): yours at the edge, the AI's just left of it -- with or without
+// the opponent's "out" badge showing.
 async function testCornerScores(page, vp) {
   const tag = `${vp.name} corner-scores`;
   const q = (js) => page.evalJs(js);
@@ -819,7 +821,7 @@ async function testCornerScores(page, vp) {
       const w = window.innerWidth;
       const a = document.querySelector("#scoreP2").getBoundingClientRect();
       const y = document.querySelector("#scoreP1").getBoundingClientRect();
-      return { aiGap: Math.round(w - a.right), youGap: Math.round(w - y.right), aiTop: Math.round(a.top) };
+      return { aiGap: Math.round(y.left - a.right), youGap: Math.round(w - y.right), aiTop: Math.round(a.top), youTop: Math.round(y.top) };
     })()`);
   for (const out of [false, true]) {
     await q(`(() => {
@@ -829,13 +831,13 @@ async function testCornerScores(page, vp) {
     })()`);
     const c = await corners();
     const what = out ? "with the out badge" : "without the out badge";
-    if (c.aiGap > 24)
+    if (c.youGap > 24 || c.youTop > 80)
       fail(
-        `${tag}: the AI's total should sit in the top-right corner ${what} (${c.aiGap}px from the edge)`,
+        `${tag}: your total should sit in the top-right corner ${what} (${c.youGap}px from the edge, top ${c.youTop})`,
       );
-    if (c.youGap > 24)
+    if (c.aiGap < 0 || c.aiGap > 16 || c.aiTop > 80)
       fail(
-        `${tag}: your total should sit in the bottom-right corner ${what} (${c.youGap}px from the edge)`,
+        `${tag}: the AI's total should sit just left of yours ${what} (gap ${c.aiGap}px, top ${c.aiTop})`,
       );
   }
 }

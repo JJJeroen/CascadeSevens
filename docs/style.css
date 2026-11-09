@@ -1,26 +1,38 @@
 /* Layout follows Tommer's Figma ("Cascade break" file): a full-screen portrait
-   table on green felt -- menu + round + opponent score on top, the opponent's
-   hand peeking in from the top edge, closed pile + open row, the shared table,
-   then your hand, undo and your score along the bottom. */
+   table -- menu + round + both scores on top, the opponent's hand peeking in
+   from the top edge, closed pile + open row, the shared table, then your hand
+   and the action buttons along the bottom. Look: "Night Cascade" (chosen
+   2026-11-08): deep navy table, light cards, orange for you, blue for the AI. */
+@font-face {
+  /* Outfit (SIL OFL 1.1, fonts/OFL.txt), bundled so the app works offline. */
+  font-family: "Outfit";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("fonts/outfit-latin.woff2") format("woff2");
+}
 :root {
-  --felt-1: #0c6e2b;
-  --felt-2: #065022;
-  --felt-3: #032d11;
-  --card-bg: #fdfdfb;
-  --card-border: #1a1a1a;
-  --red: #c0392b;
-  --black: #1a1a1a;
-  --green: #1f7a3d;
-  --blue: #1f5fa8;
-  --accent: #e8c14c;
-  --you: #ffb347; /* who scores a card: you ... */
-  --them: #5aa9ff; /* ... or the AI (also the score colours) */
-  --brand: #1f08f0;
-  --balloon: #5345d0;
-  --text: #f7f5ed;
-  --muted: #d3e3d9;
-  --back-a: #5b4fe0;
-  --back-b: #8f86f5;
+  --bg: #0d1424;
+  --panel: #131d33; /* the table */
+  --panel-2: #1c2843; /* buttons, chips, menus */
+  --panel-3: #1a2642; /* a series on the table */
+  --card-bg: #f7f8fc;
+  --card-border: rgba(13, 20, 36, 0.28);
+  --red: #d7263d;
+  --black: #161b26;
+  --green: #14804a;
+  --blue: #2160d8;
+  --joker: #6b3fa0;
+  --you: #ff9f43; /* who scores a card: you ... */
+  --them: #5c9bff; /* ... or the AI (also the score colours) */
+  --accent: var(--you); /* selection and drop highlights */
+  --brand: #ff9f43; /* the main action */
+  --brand-ink: #1a0e00;
+  --balloon: #24345e;
+  --text: #e9edf7;
+  --muted: #a9b3cc;
+  --back-a: #233259;
+  --back-b: #6f86c9;
 }
 
 * {
@@ -43,21 +55,14 @@ body {
   margin: 0;
   min-height: 100dvh;
   font-family:
-    Inter,
+    Outfit,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     Roboto,
     sans-serif;
   color: var(--text);
-  background: var(--felt-3);
-  background: radial-gradient(
-      ellipse at 50% 38%,
-      var(--felt-1) 0%,
-      var(--felt-2) 55%,
-      var(--felt-3) 100%
-    )
-    fixed;
+  background: var(--bg);
 }
 
 #app {
@@ -70,15 +75,27 @@ body {
 }
 
 button {
-  background: var(--brand);
-  color: #fff;
+  min-height: 44px;
+  background: var(--panel-2);
+  color: var(--text);
   border: none;
-  border-radius: 8px;
-  padding: 0.45rem 0.9rem;
+  border-radius: 14px;
+  padding: 0 1rem;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
+}
+/* The main action wherever it appears: orange, dark text. */
+#layMeldBtn,
+#discardBtn,
+#commitRearrangeBtn,
+.action-bar .cta,
+.banner button:not(.secondary),
+.modal-box .modal-actions button:not(.secondary) {
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-weight: 700;
 }
 button:disabled {
   opacity: 0.4;
@@ -88,9 +105,8 @@ button:hover:not(:disabled) {
   filter: brightness(1.12);
 }
 button.secondary {
-  background: transparent;
-  color: inherit;
-  border: 1px solid currentColor;
+  background: var(--panel-2);
+  color: var(--text);
 }
 
 select,
@@ -114,40 +130,69 @@ input {
   padding: 0;
   display: grid;
   place-items: center;
-  background: transparent;
+  background: var(--panel-2);
   color: var(--text);
 }
+.round-block {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  padding-left: 6px;
+}
 .round-label {
-  font-size: 0.8rem;
+  font-size: 1.05rem;
   font-weight: 600;
 }
+.goal-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+/* Score chips: label in the player's colour, total below, a colour bar at
+   the bottom like the owner bar on the cards. */
 .score {
   margin-left: auto;
-  color: var(--accent);
-  font-size: 0.85rem;
+  min-width: 56px;
+  padding: 4px 8px 6px;
+  border-radius: 12px;
+  background: var(--panel-2);
+  box-shadow: inset 0 -3px 0 var(--chip);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 1rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+.score .pending {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 .menu-pop {
   position: absolute;
-  top: 44px;
-  left: 6px;
+  top: 50px;
+  left: 0;
   z-index: 15;
   display: flex;
   flex-direction: column;
-  min-width: 96px;
-  background: #fff;
-  border: 1px solid #000;
+  min-width: 170px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--panel-2);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
 }
 .menu-pop button {
   background: transparent;
-  color: #000;
-  border-radius: 0;
+  color: var(--text);
+  border-radius: 10px;
   text-align: left;
-  padding: 0.4rem 0.7rem;
+  padding: 0 0.8rem;
   font-weight: 500;
 }
 .menu-pop button:hover {
-  background: #e9e9ff;
+  background: var(--panel-3);
   filter: none;
 }
 
@@ -179,18 +224,17 @@ input {
   height: 74px;
   padding: 0;
   margin: 0 6px 6px 0;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--back-a) 0 3px,
-    var(--back-b) 3px 6px
-  );
-  border: 3px solid #fff;
-  border-radius: 6px;
+  background: var(--back-a);
+  border: none;
+  border-radius: 9px;
+  /* a ring inside the back, and two more cards stacked behind it */
   box-shadow:
-    2px 2px 0 #fff,
-    3px 3px 0 var(--back-a),
-    5px 5px 0 #fff,
-    6px 6px 0 var(--back-a);
+    inset 0 0 0 3px var(--back-a),
+    inset 0 0 0 4.5px var(--back-b),
+    3px 3px 0 var(--bg),
+    4px 4px 0 var(--back-a),
+    7px 7px 0 var(--bg),
+    8px 8px 0 var(--back-a);
 }
 .pile:disabled {
   opacity: 1; /* it's a table object, not a greyed-out control */
@@ -204,10 +248,11 @@ input {
   min-width: 22px;
   padding: 0 4px;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.7);
-  color: #fff;
-  font-size: 0.65rem;
-  line-height: 14px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 16px;
 }
 
 /* --- Shared table ------------------------------------------------------ */
@@ -224,20 +269,29 @@ input {
      drag-to-add a concrete scrollable target to autoscroll when a drop
      target has scrolled out of view mid-drag. */
   overflow-y: auto;
+  padding: 10px;
+  border-radius: 18px;
+  background: var(--panel);
 }
 
 .rearrange-pool {
-  background: rgba(0, 0, 0, 0.25);
-  border-radius: 8px;
+  background: var(--panel);
+  border-radius: 14px;
   padding: 0.25rem 0.6rem 0.5rem;
 }
 
 .status-line {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   gap: 0.2rem 0.75rem;
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   color: var(--muted);
+}
+#turnLabel {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 /* --- Bottom bar: undo, contextual actions, your score ------------------ */
@@ -278,21 +332,21 @@ input {
   position: relative;
   align-self: flex-end;
   max-width: 200px;
-  padding: 14px 30px 14px 14px;
+  padding: 14px 44px 14px 14px;
   background: var(--balloon);
-  color: #fff;
-  border-radius: 5px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  line-height: 1.3;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  border-radius: 14px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.35;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
 }
 .x-btn {
   position: absolute;
   top: 0;
-  right: 2px;
-  width: 28px;
-  height: 28px;
+  right: 0;
+  width: 44px;
+  height: 44px;
   padding: 0;
   background: transparent;
   color: inherit;
@@ -321,27 +375,26 @@ h2 {
 }
 
 .meld {
-  border: 1px dashed var(--muted);
-  border-radius: 8px;
+  border: 2px solid transparent;
+  border-radius: 12px;
   padding: 0.4rem;
   display: flex;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel-3);
 }
 .meld.targeted {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
 }
 .meld.draft-valid {
-  border-style: solid;
-  border-color: #6fbf73;
+  border-color: #3ecf8e;
 }
 .meld.draft-invalid {
-  border-style: solid;
-  border-color: #d9534f;
+  border-color: #ff6b7d;
+  border-style: dashed;
 }
 /* "+ New group" target at the end of the draft groups. */
 .meld.draft-new {
+  border: 2px dashed #3a4a72;
   align-items: center;
   justify-content: center;
   min-width: 90px;
@@ -381,7 +434,7 @@ h2 {
   margin-left: calc(-1 * var(--meld-overlap, 16px));
   padding: 2px 0 0 4px;
   font-size: 0.85rem;
-  border-radius: 5px;
+  border-radius: 7px;
 }
 
 .card {
@@ -389,7 +442,7 @@ h2 {
   height: 74px;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 6px;
+  border-radius: 9px;
   display: flex;
   flex-direction: column;
   /* Rank/suit pinned to the top-left corner (like a real card's index),
@@ -408,9 +461,19 @@ h2 {
      card below); it stays visible even where cards overlap sideways. */
   box-shadow:
     inset 0 -5px 0 var(--owner, transparent),
-    1px 1px 3px rgba(0, 0, 0, 0.4);
+    -2px 1px 5px rgba(0, 0, 0, 0.45);
   user-select: none;
   position: relative;
+}
+/* The big suit at the bottom right of the face (data-pip, set in app.ts).
+   Overlapped cards hide it; the corner index stays the readable part. */
+.card[data-pip]::before {
+  content: attr(data-pip);
+  position: absolute;
+  right: 5px;
+  bottom: 8px;
+  font-size: 1.45em;
+  line-height: 1;
 }
 /* Four-color deck: spades black (default), clubs green, hearts red,
    diamonds blue -- easier to tell apart at a glance than the standard
@@ -428,7 +491,10 @@ h2 {
   color: var(--blue);
 }
 .card.joker {
-  background: #e9dfc4;
+  background: #efe8ff;
+  color: var(--joker);
+  font-size: 0.7rem;
+  font-weight: 800;
 }
 /* Corner index: bold and sized up so rank + suit stay readable when cards
    overlap. All four suit colors measure >= 5.2:1 against --card-bg (WCAG
@@ -457,7 +523,7 @@ h2 {
   width: 12px;
   height: 12px;
   border-radius: 3px;
-  background: var(--black);
+  background: var(--joker);
   color: #fff;
   font-size: 9px;
   line-height: 12px;
@@ -490,7 +556,7 @@ h2 {
 }
 
 .obligation {
-  color: #ffb74d;
+  color: #ffb86b;
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -572,9 +638,9 @@ h2 {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--panel-2);
   color: var(--text);
-  border: 1px solid var(--muted);
+  border: none;
 }
 
 .card.dragging {
@@ -633,10 +699,13 @@ h2 {
 }
 .modal-box {
   position: relative;
-  background: #fff;
-  color: #000;
-  border: 2px solid var(--brand);
-  border-radius: 5px;
+  background: #16213b;
+  color: var(--text);
+  border: none;
+  border-radius: 20px;
+  box-shadow:
+    0 24px 50px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
   padding: 1.25rem 1.5rem 1.1rem;
   max-width: 480px;
   width: 90%;
@@ -659,14 +728,15 @@ h2 {
    title / body / button-row layout. */
 .modal-box .dialog-title {
   margin: 0;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #000;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text);
 }
 .modal-box .dialog-body {
   margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
+  color: #cfd6e6;
+  font-size: 0.9rem;
+  font-weight: 500;
   white-space: pre-wrap; /* keeps newlines (rearrange-commit problems) and spacing */
   line-height: 1.4;
 }
@@ -678,25 +748,25 @@ h2 {
   margin-top: 0.5rem;
 }
 .modal-box button.secondary {
-  background: #fff;
-  color: var(--brand);
-  border: 1px solid var(--brand);
+  background: var(--panel-2);
+  color: var(--text);
 }
 .modal-box .x-btn {
-  top: 2px;
-  right: 4px;
-  color: #000;
+  top: 0;
+  right: 0;
+  min-height: 0;
+  color: var(--text);
 }
 
 /* Card back (opponent's hand). */
 .card.back {
   padding: 0;
-  background: repeating-linear-gradient(
-    45deg,
-    var(--back-a) 0 3px,
-    var(--back-b) 3px 6px
-  );
-  border: 3px solid #fff;
+  background: var(--back-a);
+  border: none;
+  box-shadow:
+    inset 0 0 0 3px var(--back-a),
+    inset 0 0 0 4.5px var(--back-b),
+    0 3px 8px rgba(0, 0, 0, 0.5);
 }
 
 /* Turn-0 prompt: same look as the dialogs, but inline so your hand stays
@@ -707,20 +777,20 @@ h2 {
   align-items: center;
   gap: 0.5rem 0.75rem;
   padding: 0.6rem 0.8rem;
-  background: #fff;
-  color: #000;
-  border: 2px solid var(--brand);
-  border-radius: 5px;
-  font-size: 0.8rem;
+  background: var(--panel-2);
+  color: var(--text);
+  border: none;
+  border-radius: 14px;
+  font-size: 0.85rem;
   font-weight: 600;
 }
 
 /* Opponent's come-out progress ("35/40" or "out") beside the round label. */
 .opp-status {
   margin-left: auto;
-  margin-right: 8px;
+  margin-right: 6px;
   padding: 1px 8px;
-  border: 1px solid var(--muted);
+  border: 1px solid var(--them);
   border-radius: 10px;
   color: var(--muted);
   font-size: 0.7rem;
@@ -735,10 +805,7 @@ h2 {
    from the open row you must press it before you can meld. */
 .action-bar .cta {
   flex: 1 1 100%;
-  background: var(--accent);
-  color: #1a1a1a;
   font-size: 0.95rem;
-  padding: 0.65rem 1rem;
 }
 
 /* --- Startup splash (2 seconds, then fades; app.ts also removes it) ------ */
@@ -751,7 +818,7 @@ h2 {
   align-items: center;
   justify-content: center;
   gap: 14px;
-  background: #08235b; /* the splash image's own navy */
+  background: var(--bg);
   color: var(--text);
   animation: splash-out 0.4s ease 2s forwards;
 }
@@ -775,10 +842,11 @@ h2 {
   }
 }
 .menu-version {
-  padding: 0.35rem 0.7rem;
-  border-top: 1px solid #ddd;
-  color: #666;
-  font-size: 0.65rem;
+  margin-top: 4px;
+  padding: 0.45rem 0.8rem 0.2rem;
+  border-top: 1px solid #2a3a5e;
+  color: var(--muted);
+  font-size: 0.7rem;
 }
 
 /* --- Movable popups ---------------------------------------------------- */
@@ -804,7 +872,7 @@ h2 {
   height: 4px;
   margin: -0.6rem 0 0.2rem;
   border-radius: 2px;
-  background: #c5c5f5;
+  background: #3a4a72;
 }
 /* The round/game-end popup (not the confirmations) must not hide the table it
    reports on: no dimming, and taps/scrolls fall through to the page; only the
@@ -818,26 +886,23 @@ h2 {
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
 }
 
-/* Score colours match the owner bars on the cards. */
-#scoreP1,
-#scoreP2 {
-  font-weight: 700;
-}
+/* Score chip colours match the owner bars on the cards. */
 #scoreP1 {
-  color: var(--you);
+  --chip: var(--you);
+  margin-left: 6px;
 }
 #scoreP2 {
-  color: var(--them);
+  --chip: var(--them);
 }
 #scoreP1::before,
 #scoreP2::before {
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  margin-right: 0.3rem;
-  opacity: 0.85;
+  letter-spacing: 0.06em;
+  color: var(--chip);
 }
 #scoreP1::before {
-  content: "You";
+  content: "YOU";
 }
 #scoreP2::before {
   content: "AI";
