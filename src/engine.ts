@@ -94,9 +94,9 @@ function shuffle(deck: Card[], rng: () => number = Math.random): Card[] {
 
 // --- Game/round setup ---------------------------------------------------
 
-// Who starts round 1 is random; the starter alternates every round after
-// that (confirmed against the designer 2026-07-27 — this was previously
-// an unconfirmed assumption defaulting to "player 1 always starts").
+// Player 1 starts round 1; the starter alternates every round after that
+// (REGELS.md as rewritten by the designer, accepted by the owner 2026-11-08,
+// DESIGN decision 14 -- replaces the earlier coin flip).
 function newGame(
   mode: GameMode = "standard",
   rng: () => number = Math.random,
@@ -109,7 +109,9 @@ function newGame(
     gameOver: false,
     winner: null,
     round: null,
-    nextRoundStarter: rng() < 0.5 ? 0 : 1,
+    // Player 1 starts round 1. The old coin flip's random number is still
+    // drawn, so a seed replays the same deal as before.
+    nextRoundStarter: rng() < 0 ? 1 : 0,
   };
 }
 
