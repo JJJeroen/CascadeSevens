@@ -414,7 +414,9 @@ check("undo restores in place (same Round object) and keeps 54 cards", () => {
 // every intermediate state must come back exactly, with all 54 cards present.
 check("random play: undoing every action restores every earlier state", () => {
   let undone = 0;
-  for (let g = 0; g < 150; g++) {
+  // 250 games: since only this turn's cards can be pulled back (decision 30)
+  // fewer random actions are legal, so more games keep >= 100 undos.
+  for (let g = 0; g < 250; g++) {
     const rng = E.seededRng(g * 977 + 3);
     const pick = E.seededRng(g * 131 + 7);
     const game = E.newGame("quick", rng);
@@ -449,7 +451,10 @@ check("random play: undoing every action restores every earlier state", () => {
             if (res) E.addToMeld(game, meld.id, c.id, res.wildAs);
           } else if (kind === 2 && r.tableau.length > 0) {
             const meld = r.tableau[Math.floor(pick() * r.tableau.length)];
-            const mine = meld.slots.filter((sl) => sl.ownerId === 0);
+            // only cards laid this turn can be pulled back (decision 30)
+            const mine = meld.slots.filter(
+              (sl) => sl.ownerId === 0 && E.isLaidThisTurn(game, sl.card.id),
+            );
             if (mine.length > 0)
               E.pullFromMeld(game, meld.id, [mine[0].card.id]);
           }

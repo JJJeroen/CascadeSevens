@@ -348,6 +348,7 @@ function newGame(): boolean {
   targetedMeldId = null;
   turn0UiMode = "idle";
   handDisplayOrder = [];
+  lastAiMove = null;
   hideBalloon(); // don't carry a leftover note into the new game
   resetDialogPosition($("modalBox"));
   render();
@@ -361,6 +362,7 @@ function nextRound(): void {
   targetedMeldId = null;
   turn0UiMode = "idle";
   handDisplayOrder = [];
+  lastAiMove = null;
   hideBalloon();
   resetDialogPosition($("modalBox"));
   render();
@@ -391,9 +393,106 @@ function scheduleIfAITurn(): void {
   const delay = g.round?.part === "turn0" ? 500 : 600;
   setTimeout(() => {
     if (!isAITurnNow(g)) return;
-    CascadeAI.takeTurn(g, { onStateChanged: render }, aiLevel);
+    playAiTurn(g);
     scheduleIfAITurn();
   }, delay);
+}
+
+function playAiTurn(g: Game): void {
+  const before = g.round?.part !== "turn0" ? snapTable(g) : null;
+  CascadeAI.takeTurn(g, { onStateChanged: render }, aiLevel);
+  if (before && game === g) {
+    lastAiMove = describeAiMove(before, snapTable(g));
+    render();
+  }
+}
+
+// --- "What the AI just did" line -------------------------------------------
+// Compares the table before and after the AI's turn (rather than parsing the
+// engine's log text): "AI drew from the pile, laid 10♣ J♣ Q♣ K♣ and
+// discarded Q♠."
+let lastAiMove: string | null = null;
+
+interface TableSnap {
+  pile: number;
+  row: string[];
+  aiHand: string[];
+  melds: { id: string; slots: { id: string; owner: PlayerIdx }[] }[];
+  cards: Map<string, Card>;
+  ended: boolean;
+}
+
+function snapTable(g: Game): TableSnap {
+  const r = g.round as Round;
+  const cards = new Map<string, Card>();
+  for (const c of [...r.openRow, ...r.hands[1]]) cards.set(c.id, c);
+  const melds = r.tableau.map((m) => ({
+    id: m.id,
+    slots: m.slots.map((s) => {
+      cards.set(s.card.id, s.card);
+      return { id: s.card.id, owner: s.ownerId };
+    }),
+  }));
+  return {
+    pile: r.closedPile.length,
+    row: r.openRow.map((c) => c.id),
+    aiHand: r.hands[1].map((c) => c.id),
+    melds,
+    cards,
+    ended: r.ended,
+  };
+}
+
+function describeAiMove(b: TableSnap, a: TableSnap): string | null {
+  const name = (id: string): string => {
+    const c = a.cards.get(id) ?? b.cards.get(id);
+    if (!c) return id;
+    return c.rank === "JOKER" ? "JK" : cardText(c);
+  };
+  const ownerBefore = new Map<string, PlayerIdx>();
+  for (const m of b.melds)
+    for (const s of m.slots) ownerBefore.set(s.id, s.owner);
+  const meldsBefore = new Set(b.melds.map((m) => m.id));
+  const steps: string[] = [];
+
+  const taken = b.row.filter((id) => !a.row.includes(id));
+  if (taken.length === 1) steps.push(`took ${name(taken[0])} from the cascade`);
+  else if (taken.length > 1)
+    steps.push(
+      `took ${taken.length} cards from the cascade (${name(taken[0])} and up)`,
+    );
+  else if (a.pile < b.pile) steps.push("drew from the pile");
+
+  const swapped = [...ownerBefore].filter(
+    ([id, owner]) =>
+      owner === 0 &&
+      b.cards.get(id)?.rank === "JOKER" &&
+      (a.aiHand.includes(id) ||
+        a.melds.some((m) => m.slots.some((s) => s.id === id && s.owner === 1))),
+  );
+  if (swapped.length) steps.push("swapped out your joker");
+
+  const added: string[] = [];
+  for (const m of a.melds) {
+    const fresh = m.slots
+      .filter((s) => s.owner === 1 && ownerBefore.get(s.id) !== 1)
+      .map((s) => s.id);
+    if (!fresh.length) continue;
+    if (meldsBefore.has(m.id)) added.push(...fresh);
+    else steps.push(`laid ${fresh.map(name).join(" ")}`);
+  }
+  if (added.length) steps.push(`added ${added.map(name).join(" ")}`);
+
+  const top = a.row[a.row.length - 1];
+  const discarded = top !== undefined && !b.row.includes(top) ? top : null;
+  if (!steps.length && !discarded) return null;
+  let line = `AI ${steps.join(", ")}`;
+  if (discarded)
+    line += steps.length
+      ? ` and discarded ${name(discarded)}`
+      : `discarded ${name(discarded)}`;
+  if (a.ended && !b.ended) line += " — round over";
+  return `${line}.`;
 }
 
 // --- Rendering -------------------------------------------------------------
@@ -770,7 +869,8 @@ function renderTableau(): void {
         targetedMeldId = meld.id;
         render();
       });
-      if (canRearrange && slot.ownerId === 0) {
+      const laidNow = CascadeEngine.isLaidThisTurn(g, slot.card.id);
+      if (canRearrange && slot.ownerId === 0 && laidNow) {
         attachDragSource(cardEl, {
           kind: "meld",
           cardId: slot.card.id,
@@ -784,7 +884,9 @@ function renderTableau(): void {
           cardEl,
           !r.comeOut[0]
             ? "You can only pull cards back after you've come out (40 points or more in one turn)."
-            : `${cardText(slot.card)} counts for the AI, so you can't pull it back; you can only pull back cards you laid yourself. To regroup it anyway, use "Rearrange…".`,
+            : slot.ownerId === 0
+              ? `You laid ${cardText(slot.card)} in an earlier turn; you can only pull back cards you laid this turn. To regroup it anyway, use "Rearrange…".`
+              : `${cardText(slot.card)} counts for the AI, so you can't pull it back; you can only pull back cards you laid yourself. To regroup it anyway, use "Rearrange…".`,
         );
       }
       cardsWrap.appendChild(cardEl);
@@ -1524,6 +1626,9 @@ function renderControls(): void {
       ? ` (laid ${r.comeOutAccum[0]} of the 40 needed to come out; 40 or more in one turn)`
       : " (not come out yet: lay 40 or more in one turn)"
     : "";
+  const moveEl = $("aiMoveLine");
+  moveEl.textContent = lastAiMove ?? "";
+  moveEl.hidden = !lastAiMove || g.gameOver;
   $("turnLabel").textContent = g.gameOver
     ? "Game over"
     : r.ended
@@ -1617,8 +1722,11 @@ function renderControls(): void {
       selected.length === 1 &&
       targetedHasJoker
     );
+  // Only cards you laid this turn can be pulled back (decision 30), and only
+  // if the series left behind stays valid: try the pull on a copy.
+  const pullable = !!targetedMeldId && pullOwnCardsWouldWork(g, targetedMeldId);
   $<HTMLButtonElement>("pullMeldBtn").disabled =
-    rearranging || !(isHumanTurn && r.part === 2 && comeOut && targetedMeldId);
+    rearranging || !(isHumanTurn && r.part === 2 && comeOut && pullable);
   // Mirrors engine.ts's discard() legality: nothing may still be owed.
   const canDiscardSelected =
     selected.length === 1 && r.pendingObligations.length === 0;
@@ -1795,6 +1903,30 @@ $("swapJokerBtn").addEventListener("click", () => {
   }
 });
 
+// The cards the Pull button pulls from a series: yours, laid this turn.
+function pullableOwnCardIds(g: Game, meld: Meld): string[] {
+  return meld.slots
+    .filter(
+      (s) => s.ownerId === 0 && CascadeEngine.isLaidThisTurn(g, s.card.id),
+    )
+    .map((s) => s.card.id);
+}
+
+function pullOwnCardsWouldWork(g: Game, meldId: string): boolean {
+  const meld = g.round?.tableau.find((m) => m.id === meldId);
+  if (!meld) return false;
+  const ids = pullableOwnCardIds(g, meld);
+  if (ids.length === 0) return false;
+  try {
+    const copy = structuredClone(g) as Game;
+    copy.undoFor = undefined;
+    CascadeEngine.pullFromMeld(copy, meldId, ids);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 $("pullMeldBtn").addEventListener("click", () => {
   const meld = (game as Game).round?.tableau.find(
     (m) => m.id === targetedMeldId,
@@ -1803,12 +1935,11 @@ $("pullMeldBtn").addEventListener("click", () => {
   // Only pull cards this player actually owns — a meld can be a mix of
   // both players' cards (either can add to any meld), but pulling is
   // restricted to what you placed yourself.
-  const ownCardIds = meld.slots
-    .filter((s) => s.ownerId === 0)
-    .map((s) => s.card.id);
+  const g = game as Game;
+  const ownCardIds = pullableOwnCardIds(g, meld);
   if (ownCardIds.length === 0)
     return showError(
-      "You don't have any cards of your own in this series to pull.",
+      "You have no cards in this series that you laid this turn — only those can be pulled back.",
     );
   try {
     CascadeEngine.pullFromMeld(game as Game, meld.id, ownCardIds);
@@ -2134,6 +2265,19 @@ function confirmThen(
   ]);
 }
 
+// Changing the level or the goal starts a new game: ask first while a game is
+// in progress (same rule as menu -> New).
+function confirmNewGameThen(go: () => void): void {
+  const g = game as Game;
+  if (g.gameOver || (g.round as Round).ended) return go();
+  confirmThen(
+    "Start a new game?",
+    "The game in progress will be lost.",
+    "New game",
+    go,
+  );
+}
+
 $("menuNewBtn").addEventListener("click", () => {
   closeMenu();
   const g = game as Game;
@@ -2161,16 +2305,24 @@ $("menuRoundBtn").addEventListener("click", () => {
 
 $("menuGoalBtn").addEventListener("click", () => {
   closeMenu();
+  const current = (game as Game).mode;
   const pick = (mode: GameMode) => (): void => {
-    $<HTMLSelectElement>("modeSelect").value = mode;
-    newGame();
+    if (mode === current) return; // the goal you already have: just close
+    confirmNewGameThen(() => {
+      $<HTMLSelectElement>("modeSelect").value = mode;
+      newGame();
+    });
   };
   showDialog(
     "Game goal",
     "First to pass the goal wins. Changing it starts a new game.",
     [
-      { label: "300", onClick: pick("quick"), secondary: true },
-      { label: "1000", onClick: pick("standard") },
+      { label: "300", onClick: pick("quick"), secondary: current !== "quick" },
+      {
+        label: "1000",
+        onClick: pick("standard"),
+        secondary: current !== "standard",
+      },
     ],
   );
 });
@@ -2178,18 +2330,21 @@ $("menuGoalBtn").addEventListener("click", () => {
 $("menuLevelBtn").addEventListener("click", () => {
   closeMenu();
   const pick = (level: AILevel) => (): void => {
-    const previous = aiLevel;
-    aiLevel = level;
-    // newGame refuses (bad seed): keep the old level, as no new game started.
-    if (!newGame()) {
-      aiLevel = previous;
-      return;
-    }
-    try {
-      localStorage.setItem(LEVEL_KEY, level);
-    } catch {
-      /* storage unavailable: the level lasts until reload */
-    }
+    if (level === aiLevel) return; // the level you already have: just close
+    confirmNewGameThen(() => {
+      const previous = aiLevel;
+      aiLevel = level;
+      // newGame refuses (bad seed): keep the old level, as no new game started.
+      if (!newGame()) {
+        aiLevel = previous;
+        return;
+      }
+      try {
+        localStorage.setItem(LEVEL_KEY, level);
+      } catch {
+        /* storage unavailable: the level lasts until reload */
+      }
+    });
   };
   showDialog(
     "Opponent",
@@ -2264,6 +2419,10 @@ if (new URLSearchParams(location.search).has("test")) {
     disableAI: () => {
       aiDisabled = true;
     },
+    engine: CascadeEngine,
+    snapTable,
+    describeAiMove,
+    aiTurn: () => playAiTurn(game as Game), // one AI turn now, even with the AI timer off
   };
 }
 

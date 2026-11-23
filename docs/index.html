@@ -77,7 +77,9 @@
         <h2>
           Your hand, in the draft
           <span class="hint"
-            >(drag a card to a group, or tap a card, then tap a group)</span
+            >(drag a card to a group, or tap a card, then tap a group; only
+            cards you laid this turn can go back to your hand, and they must go
+            back down this turn)</span
           >
         </h2>
         <div id="rearrangeHandPool" class="open-row"></div>
@@ -96,6 +98,7 @@
       </div>
 
       <div class="status-line">
+        <span id="aiMoveLine" class="ai-move" hidden></span>
         <span id="turnLabel">—</span>
         <span id="obligationLabel" class="obligation" hidden></span>
         <span id="selectionCount" class="selection-count" hidden></span>

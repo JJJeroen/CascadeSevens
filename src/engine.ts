@@ -94,9 +94,9 @@ function shuffle(deck: Card[], rng: () => number = Math.random): Card[] {
 
 // --- Game/round setup ---------------------------------------------------
 
-// Who starts round 1 is random; the starter alternates every round after
-// that (confirmed against the designer 2026-07-27 — this was previously
-// an unconfirmed assumption defaulting to "player 1 always starts").
+// Player 1 starts round 1; the starter alternates every round after that
+// (REGELS.md as rewritten by the designer, accepted by the owner 2026-11-08,
+// DESIGN decision 14 -- replaces the earlier coin flip).
 function newGame(
   mode: GameMode = "standard",
   rng: () => number = Math.random,
@@ -109,7 +109,9 @@ function newGame(
     gameOver: false,
     winner: null,
     round: null,
-    nextRoundStarter: rng() < 0.5 ? 0 : 1,
+    // Player 1 starts round 1. The old coin flip's random number is still
+    // drawn, so a seed replays the same deal as before.
+    nextRoundStarter: rng() < 0 ? 1 : 0,
   };
 }
 
@@ -136,6 +138,7 @@ function startRound(game: Game, rng: () => number = Math.random): Game {
     // take's bottom card. Only the newest take's bottom card is owed.
     rowObligationCardId: null,
     owedThisTurn: [], // every card owed this turn, laid or not (see syncObligations)
+    tableAtTurnStart: [], // only cards laid after this can be pulled back (decision 30)
     lastDraw: null, // undoable until any other Part 2 action happens
     rearrange: null, // active draft-then-commit tableau rearrange session (§2.3), or null
     turnStart: null,
@@ -385,6 +388,9 @@ function restartTurn(game: Game): void {
   r.hands[r.current] = start.hand;
   r.openRow = start.openRow;
   r.tableau = start.tableau;
+  // The table is back as it was when the turn began (or just after the pile
+  // draw, which doesn't touch it): undo a swap's change to this list.
+  r.tableAtTurnStart = r.tableau.flatMap((m) => m.slots.map((s) => s.card.id));
   r.comeOut[r.current] = start.comeOut;
   r.comeOutAccum[r.current] = start.comeOutAccum;
   r.comeOutAttempt = null;
@@ -811,9 +817,18 @@ function syncObligations(r: Round): void {
     // obligation (it must not become the row card, or a newer cascade take
     // would drop it from pendingObligations).
     const alsoSwapped = r.owedThisTurn.some(
-      (o) => o.cardId === owed.cardId && !o.row,
+      (o) => o.cardId === owed.cardId && !o.row && !o.pulled,
     );
     if (owed.row && !alsoSwapped) r.rowObligationCardId = owed.cardId;
+  }
+}
+
+// Cards pulled back from the table this turn must be laid again before the
+// turn ends (DESIGN decision 29): record them as owed (once each).
+function markPulled(r: Round, cardIds: string[]): void {
+  for (const id of cardIds) {
+    if (!r.owedThisTurn.some((o) => o.cardId === id && o.pulled))
+      r.owedThisTurn.push({ cardId: id, row: false, pulled: true });
   }
 }
 
@@ -1083,8 +1098,17 @@ function swapJoker(
     wildAs: null,
   };
   hand.push(slot.card); // joker returns to hand
+  // It left the table, so when it is laid again it counts as laid this turn
+  // (decision 30). Undo snapshots restore the list; restartTurn recomputes it.
+  r.tableAtTurnStart = r.tableAtTurnStart.filter((id) => id !== slot.card.id);
   r.pendingObligations.push(slot.card.id); // must be replayed into a meld this turn
-  if (!r.owedThisTurn.some((o) => o.cardId === slot.card.id && !o.row))
+  // (a "pulled" entry for the same joker doesn't count: it must still be
+  // recorded as a swapped joker, which blocks starting a rearrange)
+  if (
+    !r.owedThisTurn.some(
+      (o) => o.cardId === slot.card.id && !o.row && !o.pulled,
+    )
+  )
     r.owedThisTurn.push({ cardId: slot.card.id, row: false });
   clearObligations(r, [replacement.id]);
   r.lastDraw = null;
@@ -1151,6 +1175,12 @@ function pullFromMeld(
       `Can't pull ${notMine.card.rank}${notMine.card.suit || ""} — it's credited to the other player, and you can only pull back cards you placed yourself.`,
     );
   }
+  const earlier = pulled.find((slot) => !isLaidThisTurn(game, slot.card.id));
+  if (earlier) {
+    throw new Error(
+      `Can't pull ${earlier.card.rank}${earlier.card.suit || ""} — you laid it in an earlier turn, and you can only pull back cards you laid this turn.`,
+    );
+  }
   if (remaining.length > 0) {
     const check =
       remaining.length >= 3
@@ -1167,6 +1197,10 @@ function pullFromMeld(
     r.tableau = r.tableau.filter((m) => m.id !== meldId);
   }
   for (const slot of pulled) r.hands[r.current].push(slot.card);
+  markPulled(
+    r,
+    pulled.map((slot) => slot.card.id),
+  );
   syncObligations(r);
   r.lastDraw = null;
   logMsg(
@@ -1194,6 +1228,14 @@ function pullFromMeld(
 // r.tableau/r.hands are never touched until a successful commit, so nothing
 // else in the app sees an inconsistent state while a session is open.
 
+// Owed only because it was pulled back this turn (not a swapped joker).
+function isPulledOnly(r: Round, id: string): boolean {
+  return (
+    r.owedThisTurn.some((o) => o.cardId === id && o.pulled) &&
+    !r.owedThisTurn.some((o) => o.cardId === id && !o.row && !o.pulled)
+  );
+}
+
 function canStartRearrange(game: Game): boolean {
   const r = game.round as Round;
   return (
@@ -1205,7 +1247,11 @@ function canStartRearrange(game: Game): boolean {
     // 2026-07-27): it can be resolved by folding the card into a valid group
     // during the session (see commitRearrange, which clears the obligation
     // if that happens).
-    r.pendingObligations.every((id) => id === r.rowObligationCardId) &&
+    // A card pulled back this turn doesn't block it either (decision 29):
+    // the session can fold it straight back into a series.
+    r.pendingObligations.every(
+      (id) => id === r.rowObligationCardId || isPulledOnly(r, id),
+    ) &&
     !r.rearrange
   );
 }
@@ -1434,6 +1480,14 @@ function commitRearrange(game: Game): CommitRearrangeResult {
         cardId,
         error: `${c.rank}${c.suit || ""} belongs to the other player and can't be left in your hand — it must stay in some series.`,
       });
+    } else if (originalOwner !== undefined && !isLaidThisTurn(game, cardId)) {
+      // Taking it into your hand would be pulling back an earlier turn's
+      // card (decision 30); regrouping it on the table is fine.
+      const c = rr.cardById[cardId];
+      problems.push({
+        cardId,
+        error: `${c.rank}${c.suit || ""} was laid in an earlier turn and can't go back to your hand — it must stay in some series.`,
+      });
     }
   }
 
@@ -1442,9 +1496,17 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   // §3 decision 16): a card still owed after the commit (the row-take card
   // left in hand; a session can't start with any other obligation open) must
   // stay layable, so the hand has to keep at least one more card than it owes.
-  const owedAfter = new Set(
-    r.owedThisTurn.map((o) => o.cardId).filter((id) => newHandIds.includes(id)),
-  ).size;
+  // Table cards this session moves to the hand count as pulled back
+  // (decision 29): they will be owed too.
+  const pulledToHand = newHandIds.filter(
+    (id) => rr.originalOwnerByCardId[id] !== undefined,
+  );
+  const owedAfter = new Set([
+    ...r.owedThisTurn
+      .map((o) => o.cardId)
+      .filter((id) => newHandIds.includes(id)),
+    ...pulledToHand,
+  ]).size;
   if (problems.length === 0 && newHandIds.length === 0) {
     problems.push({
       error:
@@ -1457,7 +1519,7 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   ) {
     problems.push({
       error:
-        "That would leave you holding only the card you owe, with no way to lay it. Keep another card in your hand, or put the owed card in a series.",
+        "That would leave you holding only cards you owe, with no way to lay them. Keep another card in your hand, or put the owed cards in a series.",
     });
   }
 
@@ -1487,11 +1549,15 @@ function commitRearrange(game: Game): CommitRearrangeResult {
   // group (rather than left in hand), that resolves it the same way an
   // ordinary meld action would -- every group here has already passed
   // resolveGroup by this point, so there's nothing further to validate.
-  if (r.rowObligationCardId && !newHandIds.includes(r.rowObligationCardId)) {
-    clearObligations(r, [r.rowObligationCardId]);
-  }
+  // The same goes for any other owed card the session put on the table (a
+  // card pulled back earlier this turn, decision 29).
+  clearObligations(
+    r,
+    r.pendingObligations.filter((id) => !newHandIds.includes(id)),
+  );
   // ...and an owed card laid earlier this turn that the session moved back
-  // to the hand is owed again.
+  // to the hand is owed again, as is any table card it moved to the hand.
+  markPulled(r, pulledToHand);
   syncObligations(r);
   r.rearrange = null;
   r.lastDraw = null;
@@ -1609,8 +1675,15 @@ function advanceTurn(game: Game): void {
   r.rowDrawsThisPart1 = 0;
   r.comeOutAttempt = null;
   r.owedThisTurn = [];
+  r.tableAtTurnStart = r.tableau.flatMap((m) => m.slots.map((s) => s.card.id));
   r.turnStart = null;
   r.undoStack = [];
+}
+
+// You may only pull back cards you laid this turn (REGELS: "Alleen kaarten
+// die jij zelf legde in die beurt"; DESIGN decision 30).
+function isLaidThisTurn(game: Game, cardId: string): boolean {
+  return !(game.round as Round).tableAtTurnStart.includes(cardId);
 }
 
 // --- Round / game end ---------------------------------------------------
@@ -1739,6 +1812,7 @@ export const CascadeEngine = {
   swapJoker: recorded(swapJoker),
   pullFromMeld: recorded(pullFromMeld),
   canStartRearrange,
+  isLaidThisTurn,
   startRearrange: recorded(startRearrange),
   rearrangeState,
   rearrangeMoveCard,
