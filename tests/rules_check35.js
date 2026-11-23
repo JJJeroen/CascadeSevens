@@ -88,7 +88,9 @@ check(
     E.layNewMeld(g, sel("5H", "6H", "7H"));
     if (r.pendingObligations.length) throw new Error("5H should be resolved");
     E.pullFromMeld(g, lastMeldId(g), ["5H", "6H", "7H"]);
-    if (r.pendingObligations.join() !== "5H")
+    // 5H is owed again as the cascade card; 6H 7H are owed because they were
+    // pulled back (DESIGN decision 29).
+    if (r.pendingObligations.slice().sort().join() !== "5H,6H,7H")
       throw new Error(`owed after pull: ${r.pendingObligations}`);
     if (r.rowObligationCardId !== "5H")
       throw new Error("5H is the row card again");
@@ -131,7 +133,7 @@ check("swapped-out joker laid, then pulled back: owed again", () => {
   ]);
   if (r.pendingObligations.length) throw new Error("joker should be resolved");
   E.pullFromMeld(g, lastMeldId(g), ["QH", "QD", "JOKER-1"]);
-  if (r.pendingObligations.join() !== "JOKER-1")
+  if (r.pendingObligations.slice().sort().join() !== "JOKER-1,QD,QH")
     throw new Error(`owed after pull: ${r.pendingObligations}`);
   if (r.rowObligationCardId !== null)
     throw new Error("a joker is not the row card");
@@ -141,16 +143,20 @@ check("swapped-out joker laid, then pulled back: owed again", () => {
 });
 
 check(
-  "pulling back only the other cards of the series leaves the owed card resolved",
+  "pulling back only another card of the series leaves the owed card resolved",
   () => {
     const g = rig({ hand0: ["6H", "7H", "8H", "KD"], row: ["5H"] });
     const r = g.round;
     E.drawFromOpenRow(g, "5H");
     E.layNewMeld(g, sel("5H", "6H", "7H", "8H"));
     E.pullFromMeld(g, lastMeldId(g), ["8H"]); // 5-6-7 stays on the table
-    if (r.pendingObligations.length)
+    // 5H stays resolved; only the pulled 8H is owed (decision 29).
+    if (r.pendingObligations.join() !== "8H")
       throw new Error(`owed: ${r.pendingObligations}`);
-    E.discard(g, "8H");
+    if (r.rowObligationCardId !== null)
+      throw new Error("5H must stay resolved");
+    E.addToMeld(g, lastMeldId(g), "8H");
+    E.discard(g, "KD");
   },
 );
 
@@ -236,10 +242,14 @@ check(
     const top = r.openRow.at(-1).id;
     E.drawFromOpenRow(g, top); // newest take: owes `top`
     E.pullFromMeld(g, lastMeldId(g), ["5H", "6H", "7H"]);
-    if (r.pendingObligations.join() !== top)
+    // The newest take is the row card; 5H is no longer owed as the cascade
+    // card, only (like 6H 7H) because it was pulled back (decision 29).
+    if (r.rowObligationCardId !== top)
       throw new Error(
-        `only the newest take is owed, got ${r.pendingObligations}`,
+        `the newest take should be the row card, got ${r.rowObligationCardId}`,
       );
+    if (r.owedThisTurn.some((o) => o.cardId === "5H" && o.row))
+      throw new Error("the old take's card should be superseded");
   },
 );
 

@@ -12,19 +12,20 @@ function check(name, fn) {
   }
 }
 
-check("newGame: starter is random (both outcomes reachable)", () => {
-  const gameLow = E.newGame("standard", () => 0.1);
-  const gameHigh = E.newGame("standard", () => 0.9);
-  if (gameLow.nextRoundStarter !== 0)
-    throw new Error("rng<0.5 should give starter 0");
-  if (gameHigh.nextRoundStarter !== 1)
-    throw new Error("rng>=0.5 should give starter 1");
+check("newGame: player 1 starts round 1, whatever the random numbers", () => {
+  // REGELS.md (designer, accepted 2026-11-08): "speler 1 begint ronde 1".
+  for (const x of [0, 0.1, 0.49, 0.5, 0.9, 0.999]) {
+    const game = E.newGame("standard", () => x);
+    if (game.nextRoundStarter !== 0)
+      throw new Error(`rng ${x}: round 1 should start with player 1`);
+  }
 });
 
 check(
   "startRound: round 1 uses the game-level starter, current begins there even before Turn 0 resolves",
   () => {
-    const game = E.newGame("standard", () => 0.9); // starter = 1
+    const game = E.newGame("standard", () => 0.9);
+    game.nextRoundStarter = 1; // a later round started by player 2
     E.startRound(game, () => 0.5);
     if (game.round.starter !== 1)
       throw new Error(
